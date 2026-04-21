@@ -1,3 +1,4 @@
 [submodule "resources/highRES-Europe-GAMS"]
 	path = resources/highRES-Europe-GAMS
-	url = https://github.com/highRES-model/highRES-Europe-GAMS.git
+	url = https://github.com/dafordham/highRES-Europe-GAMS.git
+	branch = epsilon_ll
