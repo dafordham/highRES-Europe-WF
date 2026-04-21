@@ -1,9 +1,9 @@
 target: "results.db.compressed"
 
 paths:
-  gams: /opt/gams/gams50.5_linux_x64_64_sfx/  # slash at the end is required
+  gams: /Library/Frameworks/GAMS.framework/Versions/53/Resources/  # slash at the end is required
   shared_input: shared_input
-  abs_shared_code: /home/runner/work/highRES-Europe-WF/highRES-Europe-WF/resources/highRES-Europe-GAMS/
+  abs_shared_code: /Users/davidfordham/Library/CloudStorage/OneDrive-UniversitetetiOslo/Article_Marianne/highRES-Europe-WF/resources/highRES-Europe-GAMS/
   results: work
 
 parameters:
@@ -19,6 +19,20 @@ parameters:
     # "grid",
     "region",
     # "nuts2",
+  ]
+
+  epsilons: [
+    0.00,
+    0.01,
+    0.02,
+    0.03,
+    0.04,
+    0.05,
+    0.06,
+    0.07,
+    0.08,
+    0.09,
+    0.1,
   ]
 
   windoff_floating: True
@@ -57,9 +71,9 @@ parameters:
   cutoff_onwind: 0.1
   cutoff_offwind: 0.20
   
-  date_range: ["01-01", "06-30"]
+  date_range: ["01-01", "12-31"]
 
-  EV: "ON"
+  EV: "OFF"
   EV_scenario: ["BASE"]
   EV_flex: 0
   V2G: "OFF"
@@ -69,33 +83,33 @@ parameters:
 
   aggregated_regions: [
     "AT",
-    #"BE",
-    #"BG",
-    #"CH",
+    "BE",
+    "BG",
+    "CH",
     "CZ",
-    #"DE",
-    #"DK",
-    #"EE",
-    #"ES",
-    #"FI",
-    #"FR",
-    #"UK",
-    #"GR",
-    #"HR",
+    "DE",
+    "DK",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "UK",
+    "GR",
+    "HR",
     "HU",
-    #"IE",
-    #"IT",
-    #"LT",
-    #"LU",
-    #"LV",
-    #"NL",
-    #"NO",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "NL",
+    "NO",
     "PL",
-    #"PT",
-    #"RO",
-    #"SE",
-    #"SI",
-    #"SK",
+    "PT",
+    "RO",
+    "SE",
+    "SI",
+    "SK",
   ]
   solar_clc : [
     1,

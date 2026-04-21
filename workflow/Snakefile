@@ -27,6 +27,9 @@ pd.DataFrame(aggregated_regions).rename(columns={0: "zone"}).to_csv(
 spatials = config["parameters"]["spatials"]
 psys_scenarios = config["parameters"]["power_system_scenario"]
 
+#eps_constrain method loss of load
+epsilons = config["parameters"]["epsilons"]
+
 cutoff_values = {
     "solar": config["parameters"]["cutoff_solar"],
     "onwind": config["parameters"]["cutoff_onwind"],
@@ -121,7 +124,13 @@ localrules:
 
 rule all:
     input:
-        expand(modelpath / config["target"], zip, psys_scenario=psys_scenarios, year=years, spatial=spatials),
+        expand(
+            modelpath / "results_e{epsilon}.db.compressed",
+            psys_scenario=psys_scenarios,
+            year=years,
+            spatial=spatials,
+            epsilon=epsilons,
+        ) #for eps-constrain method
 
 
 rule build_cplex_opt:
@@ -584,7 +593,7 @@ rule run_gams:
         co2_target_type=config["parameters"]["co2_target_type"],
         co2_target_extent=config["parameters"]["co2_target_extent"],
         sharedcodepath=abs_gams_code_path,
-        outname="results",
+        outname="results_e{epsilon}",  # include epsilon in base name",
         store_initial_level=config["parameters"]["store_initial_level"],
         store_final_level=config["parameters"]["store_final_level"],
         hydro_res_initial_fill=config["parameters"]["hydro_res_initial_fill"],
@@ -602,14 +611,14 @@ rule run_gams:
         EV_pcap=config["parameters"]["EV_pcap"],
         EV_soc_min=config["parameters"]["EV_soc_min"],
         EV_soc_max=config["parameters"]["EV_soc_max"],
+        epsilon=lambda wc: wc.epsilon,   
     resources:
         mem_mb=50000,
     log:
-        str(modelpath) + "/highres.lst",
-        str(modelpath) + "/highres.log",
+        str(modelpath) + "/highres_e{epsilon}.lst",
+        str(modelpath) + "/highres_e{epsilon}.log",
     output:
-        modelresults=protected(modelpath / "results.gdx"),
-        # modelresultsdd=protected(modelpath / "results.db"),
+        modelresults=protected(modelpath / "results_e{epsilon}.gdx"),
     script:
         "scripts/run_gams.py"
 
@@ -618,7 +627,7 @@ rule convert_results:
     input:
         rules.run_gams.output.modelresults,
     output:
-        resultsdb=ensure(protected(modelpath / "results.db"), non_empty=True),
+        resultsdb=ensure(protected(modelpath / "results_e{epsilon}.db"), non_empty=True),
     shell:
         # TODO platform independence
         gamspath + "gamstool sqlitewrite gdxIn={input} o={output}"
@@ -628,7 +637,7 @@ rule convert_results_db_parquet:
     input:
         rules.convert_results.output.resultsdb,
     output:
-        compressdone=touch(modelpath / "results.db.compressed"),
+        compressdone=touch(modelpath / "results_e{epsilon}.db.compressed"),
     resources:
         mem_mb=50000,
     conda:

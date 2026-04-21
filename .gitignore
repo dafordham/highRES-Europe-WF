@@ -1,0 +1,49 @@
+# --- Python / general ---
+__pycache__/
+*.py[cod]
+*.ipynb_checkpoints/
+.DS_Store
+
+# --- Conda / virtual envs ---
+env/
+.venv/
+venv/
+*.lock
+
+# --- Snakemake working dirs ---
+.snakemake/
+*.snakemake.log
+
+# --- HighRES: large input data from Zenodo ---
+shared_input/
+geodata/
+weatherdata/
+resources.zip
+weatherdata.zip
+geodata.zip
+
+# If you keep resources/ under version control, remove this line:
+#resources/
+
+# --- HighRES: generated work/results ---
+work/
+**/work/
+*.gdx
+*.lst
+*.log
+*.dd
+*.parquet
+*.db
+*.db.compressed
+intermediate_data/
+*.csv
+*.ods
+*.xls
+*.xlsx
+*.txt
+
+# --- OS / editor junk ---
+Thumbs.db
+.idea/
+.vscode/
+*.swp
