@@ -47,3 +47,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# local (epsilon, delta) sweep outputs
+work_local/
+**/work_local/

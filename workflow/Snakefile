@@ -28,7 +28,33 @@ spatials = config["parameters"]["spatials"]
 psys_scenarios = config["parameters"]["power_system_scenario"]
 
 #eps_constrain method loss of load
-epsilons = config["parameters"]["epsilons"]
+# Shed-tolerance formulation: off | yearly | hourly | depthcap (default off,
+# matching the GAMS default = strict adequacy).
+#   epsilon = shedding budget over the horizon (fraction of total demand)
+#   delta   = per-hour depth cap             (fraction of that hour's demand)
+# 0.0 forbids shedding on that axis; 1.0 makes that bound non-binding.
+#
+# Which lists each mode sweeps (expand() in rule all takes the product):
+#   depthcap -> epsilons x deltas    (the 2-D grid)
+#   yearly   -> epsilons, delta = 1  (budget only)
+#   hourly   -> deltas, epsilon = 1  (depth cap only)
+#   off      -> one strict-adequacy run, tagged (0.0, 0.0); the parameters are
+#               unused by GAMS in this mode, the tag just labels the baseline
+# Do not put epsilon = 0 in the depthcap list: nothing can be shed, so every
+# delta gives the same system -- use shed_mode "off" for that baseline instead.
+shed_mode = config["parameters"].get("shed_mode", "off")
+# float() keeps the repr consistent so filenames match ("1" -> "1.0")
+epsilons = [float(e) for e in config["parameters"].get("epsilons", [])]
+deltas = [float(d) for d in config["parameters"].get("deltas", [])]
+
+if shed_mode == "depthcap":
+    sweep_epsilons, sweep_deltas = epsilons, deltas
+elif shed_mode == "yearly":
+    sweep_epsilons, sweep_deltas = epsilons, [1.0]
+elif shed_mode == "hourly":
+    sweep_epsilons, sweep_deltas = [1.0], deltas
+else:
+    sweep_epsilons, sweep_deltas = [0.0], [0.0]
 
 cutoff_values = {
     "solar": config["parameters"]["cutoff_solar"],
@@ -102,6 +128,13 @@ scenarios.loc[:,["year","run_name"]].to_csv(resultspath / "scens.csv",index=Fals
 
 modelpath=resultspath / "{psys_scenario}_{year}_{spatial}"
 
+# One directory per (epsilon, delta) run, nested inside modelpath so the shared
+# inputs (zones.dd, vre gdx, cplex.opt, ...) are built once and not duplicated.
+# Each run dir holds results.gdx, results.db, highres.lst/.log and its own
+# results/ parquet folder -- which is why convert_results_db_parquet needs no
+# change: its "path2.parent / results" is now per-run instead of shared.
+runpath=modelpath / "e{epsilon}_d{delta}"
+
 
 localrules:
     all,
@@ -122,14 +155,19 @@ localrules:
     run_gams,
 
 
+# Target the SQLite .db: that is what the analysis reads (analysis/db_io.py),
+# and sqlite3 is in the Python standard library so results stay readable without
+# a GAMS install. The Parquet step (convert_results_db_parquet) is left defined
+# but off the default path -- it produced 221 files per run that nothing used.
 rule all:
     input:
         expand(
-            modelpath / "results_e{epsilon}.db.compressed",
+            runpath / "results.db",
             psys_scenario=psys_scenarios,
             year=years,
             spatial=spatials,
-            epsilon=epsilons,
+            epsilon=sweep_epsilons,
+            delta=sweep_deltas,
         ) #for eps-constrain method
 
 
@@ -593,7 +631,7 @@ rule run_gams:
         co2_target_type=config["parameters"]["co2_target_type"],
         co2_target_extent=config["parameters"]["co2_target_extent"],
         sharedcodepath=abs_gams_code_path,
-        outname="results_e{epsilon}",  # include epsilon in base name",
+        outname="e{epsilon}_d{delta}/results",  # relative to cwd=modelpath
         store_initial_level=config["parameters"]["store_initial_level"],
         store_final_level=config["parameters"]["store_final_level"],
         hydro_res_initial_fill=config["parameters"]["hydro_res_initial_fill"],
@@ -611,14 +649,16 @@ rule run_gams:
         EV_pcap=config["parameters"]["EV_pcap"],
         EV_soc_min=config["parameters"]["EV_soc_min"],
         EV_soc_max=config["parameters"]["EV_soc_max"],
-        epsilon=lambda wc: wc.epsilon,   
+        epsilon=lambda wc: wc.epsilon,
+        delta=lambda wc: wc.delta,
+        shed_mode=shed_mode,
     resources:
         mem_mb=50000,
     log:
-        str(modelpath) + "/highres_e{epsilon}.lst",
-        str(modelpath) + "/highres_e{epsilon}.log",
+        str(runpath) + "/highres.lst",
+        str(runpath) + "/highres.log",
     output:
-        modelresults=protected(modelpath / "results_e{epsilon}.gdx"),
+        modelresults=protected(runpath / "results.gdx"),
     script:
         "scripts/run_gams.py"
 
@@ -627,7 +667,7 @@ rule convert_results:
     input:
         rules.run_gams.output.modelresults,
     output:
-        resultsdb=ensure(protected(modelpath / "results_e{epsilon}.db"), non_empty=True),
+        resultsdb=ensure(protected(runpath / "results.db"), non_empty=True),
     shell:
         # TODO platform independence
         gamspath + "gamstool sqlitewrite gdxIn={input} o={output}"
@@ -637,7 +677,7 @@ rule convert_results_db_parquet:
     input:
         rules.convert_results.output.resultsdb,
     output:
-        compressdone=touch(modelpath / "results_e{epsilon}.db.compressed"),
+        compressdone=touch(runpath / "results.db.compressed"),
     resources:
         mem_mb=50000,
     conda:

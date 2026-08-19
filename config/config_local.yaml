@@ -1,0 +1,201 @@
+target: "results.db.compressed"
+
+# Local configuration — system-wide (epsilon, delta) grid sweep.
+# Full 28 zones, 5-day horizon (120 h), depthcap shed mode:
+#   epsilon = shedding budget over the horizon (fraction of total demand)
+#   delta   = per-hour depth cap          (fraction of that hour's demand)
+# Run design: every combination of the epsilons x deltas lists below.
+# Outputs land in work_local/; the existing work/ results are untouched.
+# NOTE: resources/zones.csv is (re)written at Snakemake parse time from
+# aggregated_regions — do not run this config concurrently with config_ci.yaml.
+
+paths:
+  gams: /Library/Frameworks/GAMS.framework/Versions/53/Resources/  # slash at the end is required
+  shared_input: shared_input
+  abs_shared_code: /Users/davidfordham/Library/CloudStorage/OneDrive-UniversitetetiOslo/Article_Marianne/highRES-Europe-WF/resources/highRES-Europe-GAMS/
+  results: work_local
+
+parameters:
+  mode: [
+    "normal",
+  ]
+  years: [
+    "2010",
+  ]
+  spatials: [
+    "region",
+  ]
+
+  # Shed-tolerance formulation: off | yearly | hourly | depthcap
+  #   depthcap -> sweeps epsilons x deltas (every combination)
+  #   yearly   -> sweeps epsilons, depth cap off
+  #   hourly   -> sweeps deltas, budget off
+  #   off      -> single strict-adequacy run (the baseline)
+  shed_mode: "depthcap"
+
+  # epsilon = shedding budget over the horizon (fraction of total demand)
+  # No 0.0 here: with a zero budget nothing can be shed whatever delta says, so
+  # it would give len(deltas) identical runs. Use shed_mode "off" for that.
+  epsilons: [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1]
+
+  # delta = per-hour depth cap (fraction of that hour's demand); 1.0 = off
+  deltas: [0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.3, 1.0]
+
+  windoff_floating: True
+  power_system_scenario: ["BASE"]
+
+  # Options: "intensity", "budget"
+  co2_target_type: "intensity"
+
+  # Options: "all"
+  co2_target_extent: "all"
+
+  # Options: "OFF","TYNDP","USER"
+  trans_inv: "TYNDP"
+
+  # Only used if trans_inv set to USER
+  trans_cap_lim: 20
+
+  bias_correction: True
+
+  elevation_excl: False
+  onshore_slope_excl: True
+  include_rooftop: True
+
+  unit_commitment: "OFF"
+  frequency_response: "OFF"
+  store_uc: "OFF"
+
+  emis_price: 0
+  store_initial_level: 0.5
+  store_final_level: 0.5
+  hydro_res_initial_fill: 0.8
+  hydro_res_min: 0.5
+  pgen: 20.0
+
+  cutoff_solar: 0.09
+  cutoff_onwind: 0.1
+  cutoff_offwind: 0.20
+
+  # Format is MM-DD (parsed as ISO "2010-MM-DD"), end date inclusive.
+  # 1-5 Jan = 120 h — pipeline-shakedown horizon, matches the prebuilt inputs.
+  # Extend to lengthen the run (e.g. ["01-01","01-14"] or ["01-01","01-31"]);
+  # only the light input rules re-run. NEVER change aggregated_regions — that
+  # triggers the two ~50 GB rules (build_vre_cf_grid / build_vre_land_avail).
+  date_range: ["01-01", "01-05"]
+
+  EV: "OFF"
+  EV_scenario: ["BASE"]
+  EV_flex: 0
+  V2G: "OFF"
+  EV_pcap: 0.011
+  EV_soc_min: 0.2
+  EV_soc_max: 0.8
+
+  # Full 28-zone set — MUST match config_ci.yaml. Changing this list invalidates
+  # intermediate_data/ and forces the two ~50 GB input rules to re-run, which the
+  # 18 GB laptop cannot do. Restrict local cost via date_range instead.
+  aggregated_regions: [
+    "AT",
+    "BE",
+    "BG",
+    "CH",
+    "CZ",
+    "DE",
+    "DK",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "UK",
+    "GR",
+    "HR",
+    "HU",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "NL",
+    "NO",
+    "PL",
+    "PT",
+    "RO",
+    "SE",
+    "SI",
+    "SK",
+  ]
+  solar_clc : [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    30,
+    31,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+  ]
+  onwind_clc_no_buffer : [
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+  ]
+  onwind_clc_buffer : {
+    1 : 1000,
+    2 : 1000,
+    6 : 5000,
+  }
+  windturbines : {
+    "onshore" : "Vestas_V112_3MW",
+    "offshore_bottom" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+    "offshore_float" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+  }
+
+  wind_smooth: False
+  windon_af: 0.95
+  windoff_bottom_af: 0.95
+  windoff_floating_af: 0.95
+
+cplex_options:
+  lpmethod: 4
+  solutiontype: 2
+  threads: 4
+  predual: 1
+  BarOrder: 0
+  barepcomp: 1E-7

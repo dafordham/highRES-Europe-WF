@@ -33,6 +33,8 @@ args = [
     "--EV_soc_min="  + str(snakemake.params.EV_soc_min),
     "--EV_soc_max="  + str(snakemake.params.EV_soc_max),
     "--epsilon_param=" + str(snakemake.wildcards.epsilon),
+    "--delta_param=" + str(snakemake.wildcards.delta),
+    "--shed_mode=" + str(snakemake.params.shed_mode),
 ]
 
 process = subprocess.Popen(
