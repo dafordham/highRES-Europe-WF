@@ -48,6 +48,7 @@ Thumbs.db
 .vscode/
 *.swp
 
-# local (epsilon, delta) sweep outputs
-work_local/
-**/work_local/
+# Run output dirs, named work_<machine>_<horizon>_<mode> (plus the plain work/
+# rule above). Glob so renaming the scheme cannot silently un-ignore gigabytes.
+work_*/
+**/work_*/
