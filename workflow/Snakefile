@@ -152,7 +152,10 @@ localrules:
     compress_vre_gdx,
     compress_hydrores_inflow,
     convert_results_db_parquet,
-    run_gams,
+    # run_gams is deliberately NOT a local rule: with --executor slurm on fox it
+    # must be submitted as a cluster job, not run on the login node (a full-year
+    # solve is hours of CPLEX). Listing it here has no effect on local runs,
+    # where everything executes locally regardless.
 
 
 # Target the SQLite .db: that is what the analysis reads (analysis/db_io.py),

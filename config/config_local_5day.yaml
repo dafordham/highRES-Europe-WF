@@ -5,7 +5,8 @@ target: "results.db.compressed"
 #   epsilon = shedding budget over the horizon (fraction of total demand)
 #   delta   = per-hour depth cap          (fraction of that hour's demand)
 # Run design: every combination of the epsilons x deltas lists below.
-# Outputs land in work_local/; the existing work/ results are untouched.
+# Results dir encodes machine_horizon_mode so incomparable runs can never
+# land in the same place (the model path itself carries only scenario_year_spatial).
 # NOTE: resources/zones.csv is (re)written at Snakemake parse time from
 # aggregated_regions — do not run this config concurrently with config_ci.yaml.
 
@@ -13,7 +14,7 @@ paths:
   gams: /Library/Frameworks/GAMS.framework/Versions/53/Resources/  # slash at the end is required
   shared_input: shared_input
   abs_shared_code: /Users/davidfordham/Library/CloudStorage/OneDrive-UniversitetetiOslo/Article_Marianne/highRES-Europe-WF/resources/highRES-Europe-GAMS/
-  results: work_local
+  results: work_local_5day_depthcap
 
 parameters:
   mode: [
