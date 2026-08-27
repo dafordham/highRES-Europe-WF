@@ -35,6 +35,7 @@ args = [
     "--epsilon_param=" + str(snakemake.wildcards.epsilon),
     "--delta_param=" + str(snakemake.wildcards.delta),
     "--shed_mode=" + str(snakemake.params.shed_mode),
+    "--shed_scope=" + str(snakemake.params.shed_scope),
 ]
 
 process = subprocess.Popen(

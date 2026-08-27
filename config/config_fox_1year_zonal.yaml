@@ -29,23 +29,20 @@ parameters:
   # Shed-tolerance formulation: off | yearly | hourly | depthcap
   shed_mode: "depthcap"
 
-  # SECOND PASS: fill the depth axis between 0.1 and 1.0.
+  # ZONAL SCOPE: the same epsilon and delta enforced per country rather than on
+  # the European aggregate. Total tolerance is identical (sum_z eps*D_z =
+  # eps*D_tot); what changes is that flexibility can no longer be relocated
+  # across borders. Zonal is therefore always at least as expensive, and the
+  # gap against the system-scope sweep is the value of cross-border sharing --
+  # research question 2 in paper/journal_plan_surrogate_flexibility.md.
   #
-  # The coarse pass left a factor-of-ten hole there, and at eps=0.1 the cost is
-  # still falling steeply across it (110,997 -> 95,988 M€, 13.5% unresolved) --
-  # so the saturation depth cannot be located from the coarse grid at all.
-  #
-  # Never put 0.0 in epsilons: a zero budget forbids shedding whatever delta
-  # says, so it yields len(deltas) identical runs. The strict-adequacy baseline
-  # is a single run at (0, 0) -- request that path explicitly as a target.
-  #
-  # Points with delta <= epsilon are degenerate: the depth cap alone fixes the
-  # shed volume at delta * total_demand, so cost depends on delta only and the
-  # value repeats down the column. 3 of the 12 coarse runs were such duplicates
-  # (~50 core-hours). Keeping them here is deliberate -- pruning needs a
-  # Snakefile change, and they cost nothing now that they are already solved.
-  # eps=0.05 added so the budget axis has four points rather than three -- the
-  # cost surface (R2) and the implied-price figure (R5) are both read along it.
+  # Runs land in the SAME results root as the system sweep, under directories
+  # prefixed "zonal_", so all built inputs are shared. Do not point paths.results
+  # somewhere new: the 50 GB build_vre_land_avail rule would re-run.
+  shed_scope: "zonal"
+
+  # Grid mirrors the system sweep exactly -- the pooling value is only defined
+  # at matching (epsilon, delta) points.
   epsilons: [0.005, 0.02, 0.05, 0.1]
   deltas:   [0.005, 0.02, 0.1, 0.2, 0.3, 0.5, 1.0]
 

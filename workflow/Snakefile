@@ -43,6 +43,18 @@ psys_scenarios = config["parameters"]["power_system_scenario"]
 # Do not put epsilon = 0 in the depthcap list: nothing can be shed, so every
 # delta gives the same system -- use shed_mode "off" for that baseline instead.
 shed_mode = config["parameters"].get("shed_mode", "off")
+# Scope: "system" enforces epsilon/delta on the European aggregate, "zonal"
+# enforces the same values per country.
+#
+# Zonal runs sit in the SAME results root as system runs, distinguished by a
+# directory prefix, because everything above the solve -- including the 50 GB
+# build_vre_land_avail rule, whose exclusion rasters land in modelpath -- is
+# scope-independent and would otherwise be rebuilt for a second root.
+# The prefix leads the directory name, so the system glob "e*_d*" cannot pick
+# up zonal runs and vice versa: the two scopes still cannot be pooled by
+# accident. System keeps the bare name so the already-solved sweep stays valid.
+shed_scope = config["parameters"].get("shed_scope", "system")
+run_prefix = "" if shed_scope == "system" else shed_scope + "_"
 # float() keeps the repr consistent so filenames match ("1" -> "1.0")
 epsilons = [float(e) for e in config["parameters"].get("epsilons", [])]
 deltas = [float(d) for d in config["parameters"].get("deltas", [])]
@@ -55,6 +67,22 @@ elif shed_mode == "hourly":
     sweep_epsilons, sweep_deltas = [1.0], deltas
 else:
     sweep_epsilons, sweep_deltas = [0.0], [0.0]
+
+# The .get() above deliberately tolerates a missing list, because most modes
+# need only one of the two (yearly ignores deltas, hourly ignores epsilons,
+# off ignores both). The cost of that tolerance is a SILENT failure: a typo'd
+# key -- "epsilon:" for "epsilons:" -- yields [], expand() then produces zero
+# targets, and snakemake reports "Nothing to be done" as though the sweep were
+# already complete. Fail loudly instead.
+if not sweep_epsilons or not sweep_deltas:
+    raise ValueError(
+        f"shed_mode '{shed_mode}' requires a non-empty epsilons and deltas "
+        f"list, but resolved to epsilons={sweep_epsilons}, "
+        f"deltas={sweep_deltas}.\n"
+        f"config['parameters'] has keys: "
+        f"{sorted(config['parameters'].keys())}\n"
+        "Check for a misspelled key (e.g. 'epsilon' instead of 'epsilons')."
+    )
 
 cutoff_values = {
     "solar": config["parameters"]["cutoff_solar"],
@@ -133,7 +161,9 @@ modelpath=resultspath / "{psys_scenario}_{year}_{spatial}"
 # Each run dir holds results.gdx, results.db, highres.lst/.log and its own
 # results/ parquet folder -- which is why convert_results_db_parquet needs no
 # change: its "path2.parent / results" is now per-run instead of shared.
-runpath=modelpath / "e{epsilon}_d{delta}"
+# run_prefix is "" for system scope and "zonal_" for zonal, keeping the two
+# scopes side by side under one set of built inputs (see shed_scope above).
+runpath=modelpath / (run_prefix + "e{epsilon}_d{delta}")
 
 
 localrules:
@@ -634,7 +664,7 @@ rule run_gams:
         co2_target_type=config["parameters"]["co2_target_type"],
         co2_target_extent=config["parameters"]["co2_target_extent"],
         sharedcodepath=abs_gams_code_path,
-        outname="e{epsilon}_d{delta}/results",  # relative to cwd=modelpath
+        outname=run_prefix + "e{epsilon}_d{delta}/results",  # relative to cwd=modelpath
         store_initial_level=config["parameters"]["store_initial_level"],
         store_final_level=config["parameters"]["store_final_level"],
         hydro_res_initial_fill=config["parameters"]["hydro_res_initial_fill"],
@@ -655,6 +685,7 @@ rule run_gams:
         epsilon=lambda wc: wc.epsilon,
         delta=lambda wc: wc.delta,
         shed_mode=shed_mode,
+        shed_scope=shed_scope,
     resources:
         mem_mb=50000,
     log:
