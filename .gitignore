@@ -52,3 +52,8 @@ Thumbs.db
 # rule above). Glob so renaming the scheme cannot silently un-ignore gigabytes.
 work_*/
 **/work_*/
+
+# Assistant scratch and instruction files. Kept on the laptop but never
+# version-controlled, so they do not propagate to fox or to the group's fork.
+CLAUDE.md
+.claude/
