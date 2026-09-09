@@ -1,0 +1,227 @@
+target: "results.db"
+
+paths:
+  gams: /fp/projects01/ec85/.bin/gams/gams49.4_linux_x64_64_sfx/  # slash at the end is required
+  shared_input: shared_input
+  # Must point at the checkout that HAS the shed_mode switch (commit 6d1e830 or
+  # later). After the fox cleanup this is the single consolidated checkout.
+  abs_shared_code: /fp/projects01/ec85/models/davidac/highRES-Europe-WF/resources/highRES-Europe-GAMS/
+  # work_<machine>_<horizon>_<mode>. Project storage: backed up and permanent.
+  # NOT $HOME (50 GiB quota; a full-year results.db is ~1.2 GB) and NOT
+  # /cluster/work/ (purged after 30 days).
+  results: /fp/projects01/ec85/models/davidac/work_fox_1year_depthcap
+
+parameters:
+  mode: [
+    "normal", 
+    #"developer", # Use this mode to run the model in developer mode
+  ]
+  years: [
+    # "1995",
+    "2010",
+  ]
+  spatials: [
+    # "grid",
+    "region",
+    # "nuts2",
+  ]
+
+  # Shed-tolerance formulation: off | yearly | hourly | depthcap
+  shed_mode: "depthcap"
+  shed_scope: "system"   # explicit; the pooling comparison stays in the coarse grid
+
+  # SECOND PASS: fill the depth axis between 0.1 and 1.0.
+  #
+  # The coarse pass left a factor-of-ten hole there, and at eps=0.1 the cost is
+  # still falling steeply across it (110,997 -> 95,988 M€, 13.5% unresolved) --
+  # so the saturation depth cannot be located from the coarse grid at all.
+  #
+  # Never put 0.0 in epsilons: a zero budget forbids shedding whatever delta
+  # says, so it yields len(deltas) identical runs. The strict-adequacy baseline
+  # is a single run at (0, 0) -- request that path explicitly as a target.
+  #
+  # Points with delta <= epsilon are degenerate: the depth cap alone fixes the
+  # shed volume at delta * total_demand, so cost depends on delta only and the
+  # value repeats down the column. 3 of the 12 coarse runs were such duplicates
+  # (~50 core-hours). Keeping them here is deliberate -- pruning needs a
+  # Snakefile change, and they cost nothing now that they are already solved.
+  # eps=0.05 added so the budget axis has four points rather than three -- the
+  # cost surface (R2) and the implied-price figure (R5) are both read along it.
+  # FINE SWEEP, system scope. Two purposes:
+  #  1. Resolve eps below the coarse floor of 0.005. The envelope arithmetic puts
+  #     realistic curtailable flexibility near 0.1% of demand, and the duration
+  #     diagnostic is most DR-like at the LOW end -- but the coarse grid has only
+  #     one point there. De Marco's knee sits at EENS ~1%, the top of this range.
+  #  2. Fill the factor-of-five delta gap between 0.02 and 0.1.
+  #
+  # Delta range kept full rather than truncated at 0.2. The saturation evidence
+  # (cost spread 0.2 M EUR from delta 0.2->1.0) is from eps=0.005 ONLY, and
+  # saturation depth scales WITH eps -- so the new points at eps 0.0075 and 0.01
+  # may well saturate above 0.2, not below. At eps=0.02 the spread is still
+  # 127 M EUR.
+  #
+  # delta=1.0 also has a purpose beyond insurance: it is the pure-budget limit,
+  # i.e. the "eps yearly" formulation with no depth cap. Including it at every
+  # fine eps gives the eps-only curve across the whole low range.
+  #
+  # System scope only: the pooling gap at low eps is 35-332 M EUR (0.03-0.25% of
+  # baseline) versus up to 3,491 M EUR at eps=0.1. The zonal story lives in the
+  # coarse grid, which is already solved.
+  #
+  # Snakemake solves only missing cells, so already-solved points cost nothing.
+  epsilons: [0.0005, 0.001, 0.002, 0.003, 0.005, 0.0075, 0.01, 0.02, 0.05, 0.1]
+  deltas:   [0.005, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0]
+
+  windoff_floating: True
+  power_system_scenario: ["BASE"]
+
+  # Options: "intensity", "budget"
+  co2_target_type: "intensity"
+  
+  # Options: "all"
+  co2_target_extent: "all"
+
+  # Options: "OFF","TYNDP","USER"
+  trans_inv: "TYNDP"
+  
+  # Only used if trans_inv set to USER
+  trans_cap_lim: 20
+  
+  bias_correction: True
+
+  elevation_excl: False
+  onshore_slope_excl: True
+  include_rooftop: True
+
+  unit_commitment: "OFF"
+  frequency_response: "OFF"
+  store_uc: "OFF"
+
+  emis_price: 0
+  store_initial_level: 0.5
+  store_final_level: 0.5
+  hydro_res_initial_fill: 0.8
+  hydro_res_min: 0.5
+  pgen: 20.0
+
+  cutoff_solar: 0.09
+  cutoff_onwind: 0.1
+  cutoff_offwind: 0.20
+  
+  # Full year. The two ~50 GB input rules key on aggregated_regions, not on
+  # date_range, so this is safe while the 28-zone list stays identical -- the
+  # existing intermediate_data/ can be reused rather than rebuilt.
+  date_range: ["01-01", "12-31"]
+
+  EV: "OFF"
+  EV_scenario: ["BASE"]
+  EV_flex: 0
+  V2G: "OFF"
+  EV_pcap: 0.011
+  EV_soc_min: 0.2
+  EV_soc_max: 0.8
+
+  aggregated_regions: [
+    "AT",
+    "BE",
+    "BG",
+    "CH",
+    "CZ",
+    "DE",
+    "DK",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "UK",
+    "GR",
+    "HR",
+    "HU",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "NL",
+    "NO",
+    "PL",
+    "PT",
+    "RO",
+    "SE",
+    "SI",
+    "SK",
+  ]
+  solar_clc : [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    30,
+    31,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+  ]
+  onwind_clc_no_buffer : [
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+  ]
+  onwind_clc_buffer : {
+    1 : 1000,
+    2 : 1000,
+    6 : 5000,
+  }
+  windturbines : {
+    "onshore" : "Vestas_V112_3MW",
+    "offshore_bottom" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+    "offshore_float" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+  }
+
+  wind_smooth: False
+  windon_af: 0.95
+  windoff_bottom_af: 0.95
+  windoff_floating_af: 0.95
+
+cplex_options:
+  lpmethod: 4
+  solutiontype: 2
+  threads: 8   # keep in step with cpus_per_task in --default-resources
+  predual: 1
+  BarOrder: 0
+  barepcomp: 1E-7
