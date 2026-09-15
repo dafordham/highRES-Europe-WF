@@ -1,7 +1,11 @@
 target: "results.db"
 
 paths:
-  gams: /fp/projects01/ec85/.bin/gams/gams49.4_linux_x64_64_sfx/  # slash at the end is required
+  # GAMS 54.1 since 2026-09-15. 49.4 is rejected by the license server ("Node ID
+  # for category 2 not defined, please update your GAMS"); 52.5's time-limited
+  # license has expired. The 57 runs solved in Aug 2026 used 49.4 -- check one
+  # known point reproduces under 54.1 before pooling the two in one grid.
+  gams: /fp/projects01/ec85/.bin/gams/gams54.1_linux_x64_64_sfx/  # slash at the end is required
   shared_input: shared_input
   # Must point at the checkout that HAS the shed_mode switch (commit 6d1e830 or
   # later). After the fox cleanup this is the single consolidated checkout.

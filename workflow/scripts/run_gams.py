@@ -54,4 +54,20 @@ with open(snakemake.log[0], "w") as f:
         if not line and process.poll() is not None:
             break
         print(line.decode(), end="")
-        f.write(line.decode().rstrip("\n"))
+        f.write(line.decode())  # keep newlines, or the log is one run-on line
+
+# GAMS errors (licensing, compilation, execution) do not raise on their own:
+# they just leave results.gdx missing, which snakemake reports as an opaque
+# "message: None". Fail here with the end of the listing so the real cause is
+# in the first log anyone reads. Note an infeasible model still exits 0 --
+# model status is separate from the process exit code -- so this only trips
+# on genuine failures.
+returncode = process.wait()
+if returncode != 0:
+    with open(snakemake.log[0]) as f:
+        tail = f.read()[-3000:]
+    raise RuntimeError(
+        f"GAMS exited with code {returncode} for "
+        f"eps={snakemake.wildcards.epsilon} delta={snakemake.wildcards.delta}.\n"
+        f"--- end of {snakemake.log[0]} ---\n{tail}"
+    )

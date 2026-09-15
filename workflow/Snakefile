@@ -688,6 +688,12 @@ rule run_gams:
         shed_scope=shed_scope,
     resources:
         mem_mb=50000,
+        # Name each SLURM job after its run directory. The executor's default is
+        # the snakemake run UUID, which is identical for every job in a sweep, so
+        # squeue shows a column of the same 8-char hash and you cannot tell which
+        # (epsilon, delta) is which. Note squeue truncates %j to 8 chars by
+        # default -- use: squeue -u $USER -o "%.10i %.22j %.8T %.11M %R"
+        slurm_extra=lambda wc: f"--job-name={run_prefix}e{wc.epsilon}_d{wc.delta}",
     log:
         str(runpath) + "/highres.lst",
         str(runpath) + "/highres.log",
