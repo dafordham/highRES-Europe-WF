@@ -225,7 +225,8 @@ parameters:
 cplex_options:
   lpmethod: 4
   solutiontype: 2
-  threads: 8   # keep in step with cpus_per_task in --default-resources
+  threads: 30   # must match cpus_per_task in --default-resources. Every fox run so far
+               # used 30 (cplex.opt on fox, never regenerated under --rerun-triggers mtime).
   predual: 1
   BarOrder: 0
   barepcomp: 1E-7
