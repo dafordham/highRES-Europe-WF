@@ -688,12 +688,17 @@ rule run_gams:
         shed_scope=shed_scope,
     resources:
         mem_mb=50000,
-        # Name each SLURM job after its run directory. The executor's default is
-        # the snakemake run UUID, which is identical for every job in a sweep, so
-        # squeue shows a column of the same 8-char hash and you cannot tell which
-        # (epsilon, delta) is which. Note squeue truncates %j to 8 chars by
-        # default -- use: squeue -u $USER -o "%.10i %.22j %.8T %.11M %R"
-        slurm_extra=lambda wc: f"--job-name={run_prefix}e{wc.epsilon}_d{wc.delta}",
+        # DO NOT put --job-name in slurm_extra. Tried 2026-09-15/16 to replace
+        # the run-UUID job names with e{eps}_d{delta}: the executor sets
+        # --job-name itself and rejects a second one, and it does so inside its
+        # submission thread -- so snakemake printed "Execute 12 jobs..." and
+        # then deadlocked in futex_do_wait, never calling sbatch and never
+        # reporting an error. Two days of the fine sweep were lost to it.
+        # To tell runs apart without it, use the executor's own log paths --
+        # .snakemake/slurm_logs/rule_run_gams/BASE_2010_region_0.002_0.5/<id>.log
+        # already carries (epsilon, delta), and the submission lines in the
+        # snakemake log map each SLURM jobid to one of them. Or read the
+        # working directory per job: squeue -u $USER -o "%.10i %.8T %.11M %R %Z"
     log:
         str(runpath) + "/highres.lst",
         str(runpath) + "/highres.log",
