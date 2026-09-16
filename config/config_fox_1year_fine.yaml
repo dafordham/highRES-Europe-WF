@@ -3,8 +3,12 @@ target: "results.db"
 paths:
   # GAMS 54.1 since 2026-09-15. 49.4 is rejected by the license server ("Node ID
   # for category 2 not defined, please update your GAMS"); 52.5's time-limited
-  # license has expired. The 57 runs solved in Aug 2026 used 49.4 -- check one
-  # known point reproduces under 54.1 before pooling the two in one grid.
+  # license has expired. The 57 runs solved in Aug 2026 used 49.4, so one known
+  # point was re-solved under 54.1 (2026-09-16, run validate_gams54): cost
+  # 128090.947794175 vs 128090.947794, budget marginal -0.170749083499866 vs
+  # -0.170749083, shed 16182.352 GWh. Identical to every digit recorded, so the
+  # two versions pool in one grid. That run also used the inputs rebuilt on
+  # 2026-09-15, which confirms the rebuild left the vre/hydro .gdx unchanged.
   gams: /fp/projects01/ec85/.bin/gams/gams54.1_linux_x64_64_sfx/  # slash at the end is required
   shared_input: shared_input
   # Must point at the checkout that HAS the shed_mode switch (commit 6d1e830 or
