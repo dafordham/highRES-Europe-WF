@@ -593,6 +593,11 @@ rule run_gams:
         emis_price=config["parameters"]["emis_price"],
         trans_inv=config["parameters"]["trans_inv"],
         trans_cap_lim=config["parameters"]["trans_cap_lim"],
+        # Climate-Robust Pathways; default to a stock expansion run so existing
+        # configs that predate these switches keep working unchanged.
+        fix_fleet=config["parameters"].get("fix_fleet", ""),
+        ens_obj=config["parameters"].get("ens_obj", "OFF"),
+        delta=config["parameters"].get("delta", 0.05),
         unit_commitment=config["parameters"]["unit_commitment"],
         frequency_response=config["parameters"]["frequency_response"],
         store_uc=config["parameters"]["store_uc"],
