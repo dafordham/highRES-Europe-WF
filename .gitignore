@@ -15,10 +15,10 @@ venv/
 *.snakemake.log
 
 # --- HighRES: large input data ---
-# shared_input/ is a symlink to the copy in Article_Marianne; intermediate_data
+# shared_input/ is a symlink to the copy in Article_Marianne. intermediate_data
 # is a 1.1 GB copy of the outputs of build_shapes and build_vre_cf_grid, the two
 # rules that need ~50 GB RAM. Neither belongs in git, and neither survives a
-# fresh clone -- see CLAUDE.md for how to reconstitute them.
+# fresh clone. See CLAUDE.md for how to reconstitute them.
 shared_input/
 geodata/
 weatherdata/

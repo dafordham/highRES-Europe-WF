@@ -2,11 +2,11 @@
 
 Climate-Robust Pathways verification. Two things this answers:
 
-Test A -- the dispatch is run against the same weather year the fleet was built
+Test A. The dispatch is run against the same weather year the fleet was built
 on, under a cap of opex* x (1 + delta). The t0 dispatch is feasible by
 construction: it served all load at exactly opex*. So the answer is known in
 advance and the solve must return ENS = 0 with the cap slack. Anything else
-means the fleet is being fixed incompletely -- most likely hydro, or VRE cells
+means the fleet is being fixed incompletely, most likely hydro, or VRE cells
 dropped from the .dd. It is the only point in this project with a ground truth,
 so it is worth spending a solve on before trusting any later ENS.
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pandas as pd
 
-# With the fleet fixed these are constants; only varom moves.
+# With the fleet fixed these are constants. Only varom moves.
 FIXED_COST = [
     "costs_gen_capex",
     "costs_gen_fom",
@@ -37,7 +37,7 @@ FIXED_COST = [
 ]
 VAROM_COST = ["costs_gen_varom", "costs_store_varom"]
 
-# Solver tolerance. barepcomp is 1E-7 in the local config; ENS is summed over
+# Solver tolerance. barepcomp is 1E-7 in the local config, and ENS is summed over
 # zones and hours, so allow a little more slack than that before calling a
 # value nonzero.
 TOL = 1e-4
@@ -66,8 +66,8 @@ def total(con, tables, col="level"):
 def scalar(con, name, col="level"):
     """Read a 0-dimensional symbol.
 
-    gamstool sqlitewrite does not give 0-dim symbols a table of their own --
-    they are rows in scalars (parameters), scalarvariables and
+    gamstool sqlitewrite does not give 0-dim symbols a table of their own.
+    They are rows in scalars (parameters), scalarvariables and
     scalarequations. Only symbols with at least one set dimension become
     tables, which is why o_ens_z exists but o_ens_total does not.
     """
@@ -114,7 +114,7 @@ def report_dispatch(con, varom_t0):
     varom = total(con, VAROM_COST)
 
     if ens is None:
-        print("  o_ens_total absent -- was ens_obj actually ON?")
+        print("  o_ens_total absent. Was ens_obj actually ON?")
     else:
         verdict = "PASS" if abs(ens) <= TOL else "FAIL"
         print(f"  ens_total                {ens:>16.6f}   [{verdict}] expected 0")
@@ -128,12 +128,12 @@ def report_dispatch(con, varom_t0):
         verdict = "PASS" if abs(cap_dual) <= TOL else "note"
         print(f"  eq_opex_cap.M            {cap_dual:>16.6f}   [{verdict}] expected 0 (slack)")
         if abs(cap_dual) > TOL:
-            print(f"     cap is binding; 1/dual = {1.0/cap_dual:,.2f} per unit energy")
+            print(f"     cap is binding. 1/dual = {1.0/cap_dual:,.2f} per unit energy")
 
     co2_dual = total(con, ["eq_co2_target"], col="marginal")
     print(f"  eq_co2_target.M          {co2_dual:>16.6f}")
     if abs(co2_dual) > TOL:
-        print("     carbon cap is binding -- some ENS may be carbon-driven")
+        print("     carbon cap is binding, so some ENS may be carbon-driven")
         print("     rather than adequacy-driven. The intensity allowance is")
         print("     built from demand, not served demand, so shedding relieves it.")
 
@@ -171,7 +171,7 @@ def main():
         con.close()
 
     if not args.dispatch:
-        print("\n(no --dispatch given; t0 figures only)")
+        print("\n(no --dispatch given, t0 figures only)")
         return
 
     dsp = Path(args.dispatch)

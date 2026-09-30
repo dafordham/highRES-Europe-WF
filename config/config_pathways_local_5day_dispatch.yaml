@@ -1,4 +1,4 @@
-# CLIMATE-ROBUST PATHWAYS — dispatch with a fixed fleet, min ENS under a cost cap.
+# CLIMATE-ROBUST PATHWAYS. Dispatch a fixed fleet, min ENS under a cost cap.
 #
 # This is an OVERLAY, not a standalone config. It carries only what differs from
 # config_pathways_local_5day.yaml and is applied on top of it:
@@ -13,7 +13,7 @@
 # would let them drift, and a drifted date_range would silently pin a fleet to
 # a horizon it was never solved on.
 #
-# Order of operations — the .dd must live inside this run's own model directory,
+# Order of operations. The .dd must live inside this run's own model directory,
 # because GAMS runs with cwd=modelpath and datafolderpath is ".":
 #
 #   1. solve t0                   (the base config on its own)
@@ -28,7 +28,7 @@ paths:
 
 parameters:
   # Name of the .dd holding the solved fleet, without the extension. Every
-  # capacity in the system is pinned to it; only dispatch stays free.
+  # capacity in the system is pinned to it. Only dispatch stays free.
   fix_fleet: "fixed_caps"
 
   # Minimise energy not served subject to varom <= opex* x (1 + delta),
@@ -36,7 +36,7 @@ parameters:
   ens_obj: "ON"
 
   # PLACEHOLDER. The relative slack on the reference operating cost has no
-  # defensible value yet — "find previously used values for delta" is still an
+  # defensible value yet. "find previously used values for delta" is still an
   # open action from 2026-09-16, and the MGA literature is where it should come
   # from, since that is the tradition this near-optimal-space formulation sits
   # in. Nothing interpretive should rest on this number until it is sourced.
