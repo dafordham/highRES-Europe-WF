@@ -116,7 +116,15 @@ localrules:
     compress_vre_gdx,
     compress_hydrores_inflow,
     convert_results_db_parquet,
-    run_gams,
+    # run_gams is deliberately NOT listed here. As a local rule it executes in
+    # the Snakemake process itself, which on fox means the solve runs on the
+    # login node. Leave it out so --executor slurm submits it as a job.
+    #
+    # DO NOT put --job-name in slurm_extra for it either. The SLURM executor
+    # sets the job name itself and rejects a second one inside its submission
+    # thread, so Snakemake prints "Execute N jobs" and then hangs in
+    # futex_do_wait. No sbatch call, no error, no timeout. Cost two days on
+    # 2026-09-15/16 in the other project.
 
 
 rule all:

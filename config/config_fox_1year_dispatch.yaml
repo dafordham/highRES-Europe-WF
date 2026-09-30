@@ -1,0 +1,52 @@
+# CLIMATE-ROBUST PATHWAYS, full-year dispatch on fox. Fixed fleet, min ENS
+# under a cost cap.
+#
+# This is an OVERLAY, not a standalone config. It carries only what differs
+# from config_fox_1year.yaml and is applied on top of it:
+#
+#   snakemake --configfile config/config_fox_1year.yaml \
+#                          config/config_fox_1year_dispatch.yaml \
+#     --rerun-incomplete --executor slurm \
+#     --default-resources slurm_account=ec85 runtime=86400 \
+#     mem_mb_per_cpu=4000 cpus_per_task=30 --keep-going --latency-wait 30 \
+#     -j unlimited -c 30
+#
+# Snakemake merges multiple --configfile arguments recursively, later files
+# winning. An overlay rather than a copy because the fleet fixed here was
+# solved against the t0 config's inputs, so date_range, aggregated_regions,
+# the clc lists and the scenario assumptions must be identical. A duplicated
+# file would let them drift, and a drifted date_range would pin a fleet to a
+# horizon it was never solved on.
+#
+# Order of operations. The .dd must live inside this run's own model
+# directory, because GAMS runs with cwd=modelpath and datafolderpath is ".":
+#
+#   1. solve t0                            (the base config on its own)
+#   2. snakemake ... --until build_inputs  (creates this run's modelpath)
+#   3. caps2dd.py --from <t0 results.db> --to <this modelpath>/fixed_caps.dd
+#   4. snakemake ...                       (solves)
+#
+# Expect this to be far cheaper than t0, since capacity is fixed and only the
+# dispatch is free, but that is the thing being measured rather than assumed.
+
+paths:
+  # Separate results root. results.gdx is protected(), so the t0 run's output
+  # cannot be overwritten in place.
+  results: /fp/projects01/ec85/models/davidac/Article_pathways/work_fox_1year_dispatch
+
+parameters:
+  # Name of the .dd holding the solved fleet, without the extension. Every
+  # capacity in the system is pinned to it. Only dispatch stays free.
+  fix_fleet: "fixed_caps"
+
+  # Minimise energy not served subject to varom <= opex* x (1 + delta),
+  # instead of minimising cost.
+  ens_obj: "ON"
+
+  # PLACEHOLDER. The relative slack on the reference operating cost has no
+  # defensible value yet. "find previously used values for delta" is still an
+  # open action from 2026-09-16, and the MGA literature is where it should
+  # come from, since that is the tradition this near-optimal-space formulation
+  # sits in. Nothing interpretive should rest on this number until it is
+  # sourced. It does not affect the timing measurement.
+  delta: 0.05

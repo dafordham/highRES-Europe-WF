@@ -1,0 +1,212 @@
+target: "results.db"
+
+# CLIMATE-ROBUST PATHWAYS, t0 on fox. Full year 2010, stock deterministic
+# expansion. This is the real starting fleet, not a shakedown: the local
+# 5-day config only ever existed to prove the pipeline was wired correctly.
+#
+# The dispatch run that follows fixes its capacities to this run's solution,
+# so the two must agree on every scenario assumption. Change them here and in
+# config_fox_1year_dispatch.yaml together, or not at all.
+#
+# Launch from inside screen, and check the prompt actually changed first:
+#
+#   screen -S pathways
+#   snakemake --configfile config/config_fox_1year.yaml --rerun-incomplete \
+#     --executor slurm --default-resources slurm_account=ec85 runtime=86400 \
+#     mem_mb_per_cpu=4000 cpus_per_task=30 --keep-going --latency-wait 30 \
+#     -j unlimited -c 30
+#
+# runtime=86400 rather than the 43200 the other project uses. A full-year
+# expansion has run to 17 h, and a wall-time kill loses the whole solve.
+#
+# Check dusage -p ec85 before launching. A full disk does not announce itself:
+# it surfaces as a plain SLURM FAILED, once as an I/O error 50 s in and once
+# as "Could not spawn gamscmex, rc = 4" after an 8-hour solve.
+
+paths:
+  # GAMS 54.1. 49.4 is refused by the licence server and 52.5's licence has
+  # expired. Trailing slash is required.
+  gams: /fp/projects01/ec85/.bin/gams/gams54.1_linux_x64_64_sfx/
+  shared_input: shared_input
+  # MUST point at THIS project's GAMS submodule on fox, branch pathways.
+  # Pointing it at the other project's checkout silently solves that model.
+  abs_shared_code: /fp/projects01/ec85/models/davidac/Article_pathways/highRES-Europe-WF/resources/highRES-Europe-GAMS/
+  # Project storage, which is backed up and permanent. Never $HOME, which has a
+  # 50 GiB quota against a ~1.2 GB results.db, and never /cluster/work, which
+  # is purged after 30 days.
+  results: /fp/projects01/ec85/models/davidac/Article_pathways/work_fox_1year_pathways
+
+parameters:
+  mode: [
+    "normal",
+  ]
+  years: [
+    "2010",
+  ]
+  spatials: [
+    "region",
+  ]
+
+  windoff_floating: True
+  power_system_scenario: ["BASE"]
+
+  # Options: "intensity", "budget"
+  co2_target_type: "intensity"
+
+  # Options: "all"
+  co2_target_extent: "all"
+
+  # CLIMATE-ROBUST PATHWAYS switches. t0 is a stock expansion, so both are off
+  # and delta is unused. The dispatch overlay turns them on.
+  fix_fleet: ""
+  ens_obj: "OFF"
+  delta: 0.05
+
+  # Options: "OFF","TYNDP","USER"
+  trans_inv: "TYNDP"
+
+  # Only used if trans_inv set to USER
+  trans_cap_lim: 20
+
+  bias_correction: True
+
+  elevation_excl: False
+  onshore_slope_excl: True
+  include_rooftop: True
+
+  unit_commitment: "OFF"
+  frequency_response: "OFF"
+  store_uc: "OFF"
+
+  emis_price: 0
+  store_initial_level: 0.5
+  store_final_level: 0.5
+  hydro_res_initial_fill: 0.8
+  hydro_res_min: 0.5
+  pgen: 20.0
+
+  cutoff_solar: 0.09
+  cutoff_onwind: 0.1
+  cutoff_offwind: 0.20
+
+  # Format is MM-DD (parsed as ISO "2010-MM-DD"), end date inclusive, so this
+  # is the full 8760 hours.
+  date_range: ["01-01", "12-31"]
+
+  EV: "OFF"
+  EV_scenario: ["BASE"]
+  EV_flex: 0
+  V2G: "OFF"
+  EV_pcap: 0.011
+  EV_soc_min: 0.2
+  EV_soc_max: 0.8
+
+  # Full 28-zone set — MUST match config_ci.yaml. Changing this list invalidates
+  # intermediate_data/ and forces the two ~50 GB input rules to re-run, which the
+  # 18 GB laptop cannot do. Restrict local cost via date_range instead.
+  aggregated_regions: [
+    "AT",
+    "BE",
+    "BG",
+    "CH",
+    "CZ",
+    "DE",
+    "DK",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "UK",
+    "GR",
+    "HR",
+    "HU",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "NL",
+    "NO",
+    "PL",
+    "PT",
+    "RO",
+    "SE",
+    "SI",
+    "SK",
+  ]
+  solar_clc : [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    30,
+    31,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+  ]
+  onwind_clc_no_buffer : [
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+  ]
+  onwind_clc_buffer : {
+    1 : 1000,
+    2 : 1000,
+    6 : 5000,
+  }
+  windturbines : {
+    "onshore" : "Vestas_V112_3MW",
+    "offshore_bottom" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+    "offshore_float" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+  }
+
+  wind_smooth: False
+  windon_af: 0.95
+  windoff_bottom_af: 0.95
+  windoff_floating_af: 0.95
+
+cplex_options:
+  lpmethod: 4
+  solutiontype: 2
+  # Must match cpus_per_task in the launch command above. Every fox run in the
+  # other project used 30.
+  threads: 30
+  predual: 1
+  BarOrder: 0
+  barepcomp: 1E-7
