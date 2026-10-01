@@ -12,9 +12,13 @@ target: "results.db"
 #
 #   screen -S pathways
 #   snakemake --configfile config/config_fox_1year.yaml --rerun-incomplete \
-#     --executor slurm --default-resources slurm_account=ec85 runtime=86400 \
-#     mem_mb_per_cpu=4000 cpus_per_task=30 --keep-going --latency-wait 30 \
+#     --executor slurm --default-resources slurm_account=ec85 runtime=1440 \
+#     mem_mb_per_cpu=4000 --keep-going --latency-wait 30 \
 #     -j unlimited -c 30
+#
+# No cpus_per_task here on purpose. The SLURM executor takes it from each
+# rule's threads, so run_gams gets 30 and the light input rules get 1 instead
+# of queueing for a 30-core slot. runtime is in MINUTES, so 1440 is 24 h.
 #
 # runtime=86400 rather than the 43200 the other project uses. A full-year
 # expansion has run to 17 h, and a wall-time kill loses the whole solve.

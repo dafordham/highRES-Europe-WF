@@ -615,6 +615,15 @@ rule run_gams:
         EV_pcap=config["parameters"]["EV_pcap"],
         EV_soc_min=config["parameters"]["EV_soc_min"],
         EV_soc_max=config["parameters"]["EV_soc_max"],
+    # The SLURM executor derives cpus_per_task from threads when
+    # cpus_per_task is not given as a resource, so this is what sizes the
+    # solve's allocation. It MUST match cplex_options.threads in the config,
+    # or CPLEX spawns a different number of threads than SLURM allocated.
+    #
+    # Declared per rule rather than through --default-resources cpus_per_task,
+    # which applied 30 cores to every submitted rule and left light ones such
+    # as build_ev_inputs queueing for a 30-core slot they never use.
+    threads: 30
     resources:
         mem_mb=50000,
     log:
