@@ -116,6 +116,7 @@ localrules:
     compress_vre_gdx,
     compress_hydrores_inflow,
     convert_results_db_parquet,
+    # pathways
     # run_gams is deliberately NOT listed here. As a local rule it executes in
     # the Snakemake process itself, which on fox means the solve runs on the
     # login node. Leave it out so --executor slurm submits it as a job.
@@ -123,8 +124,7 @@ localrules:
     # DO NOT put --job-name in slurm_extra for it either. The SLURM executor
     # sets the job name itself and rejects a second one inside its submission
     # thread, so Snakemake prints "Execute N jobs" and then hangs in
-    # futex_do_wait. No sbatch call, no error, no timeout. Cost two days on
-    # 2026-09-15/16 in the other project.
+    # futex_do_wait. 
 
 
 rule all:
@@ -601,7 +601,8 @@ rule run_gams:
         emis_price=config["parameters"]["emis_price"],
         trans_inv=config["parameters"]["trans_inv"],
         trans_cap_lim=config["parameters"]["trans_cap_lim"],
-        # Climate-Robust Pathways; default to a stock expansion run so existing
+        # pathways
+        # Climate-Robust Pathways: default to a stock expansion run so existing
         # configs that predate these switches keep working unchanged.
         fix_fleet=config["parameters"].get("fix_fleet", ""),
         ens_obj=config["parameters"].get("ens_obj", "OFF"),
@@ -615,14 +616,15 @@ rule run_gams:
         EV_pcap=config["parameters"]["EV_pcap"],
         EV_soc_min=config["parameters"]["EV_soc_min"],
         EV_soc_max=config["parameters"]["EV_soc_max"],
+    # pathways
     # The SLURM executor derives cpus_per_task from threads when
     # cpus_per_task is not given as a resource, so this is what sizes the
     # solve's allocation. It MUST match cplex_options.threads in the config,
     # or CPLEX spawns a different number of threads than SLURM allocated.
     #
     # Declared per rule rather than through --default-resources cpus_per_task,
-    # which applied 30 cores to every submitted rule and left light ones such
-    # as build_ev_inputs queueing for a 30-core slot they never use.
+    # which applied 30 cores to every submitted rule and left light ones 
+    # queueing for a 30-core slot they never use.
     threads: 30
     resources:
         mem_mb=50000,

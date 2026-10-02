@@ -37,12 +37,8 @@ args = [
     "--EV_soc_max="  + str(snakemake.params.EV_soc_max),
 ]
 
-# fix_fleet names a .dd holding a solved fleet; empty means capacity stays free,
-# as in a stock expansion run. It is appended only when set, because GAMS parses
-# "--key=" with an empty value by swallowing the NEXT argument as the value --
-# "--fix_fleet=" followed by "--ens_obj=OFF" silently set fix_fleet to the string
-# "--ens_obj=OFF", after which the model tried to $INCLUDE a file by that name
-# and failed with 19 errors whose first line was "Unable to open include file".
+# fix_fleet names a .dd holding a solved fleet. Empty means capacity stays free,
+# as in a stock expansion run. It is appended only when set, so the default is a stock expansion run and configs that predate this switch keep working unchanged.
 fix_fleet = str(snakemake.params.fix_fleet).strip()
 if fix_fleet:
     args.append("--fix_fleet=" + fix_fleet)
@@ -68,9 +64,7 @@ with open(snakemake.log[0], "w") as f:
 # GAMS errors (licensing, compilation, execution) do not raise on their own:
 # they just leave results.gdx missing, which snakemake reports as an opaque
 # "message: None". Fail here with the end of the listing so the real cause is
-# in the first log anyone reads. Note an infeasible model still exits 0 --
-# model status is separate from the process exit code -- so this only trips
-# on genuine failures.
+# in the first log anyone reads.
 returncode = process.wait()
 if returncode != 0:
     with open(snakemake.log[0]) as f:

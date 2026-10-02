@@ -6,7 +6,7 @@ has to become an input. This reads the capacity variables out of a solved run
 and emits the parameters that the fix_fleet block in highres.gms expects.
 
 Reads results.db rather than results.gdx: the workflow already produces it via
-`gamstool sqlitewrite`, and sqlite3 + pandas need no GAMS Python bindings.
+`gamstool sqlitewrite`.
 
 Also carries opex*, the reference operating cost, since the min-ENS dispatch
 caps varom at opex* x (1 + delta) and that reference has to come from the run
@@ -27,9 +27,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data2dd_funcs import wrapdd  # noqa: E402
 
-# Matches the rest of the workflow, and matters here: the fixed values must
-# round-trip consistently or eq_new_vre_pcap_z can be left infeasible by a
-# mismatch between a zonal total and the cells that must sum to it.
+# Matches the rest of the workflow
 ROUNDDP = 8
 
 # Columns every gamstool sqlitewrite variable table carries. Anything else is
@@ -64,8 +62,7 @@ def table_exists(con, name):
 
 
 def fmt(v):
-    # Fixed-point rather than repr: GAMS is picky about numeric literals and
-    # numpy will happily hand back 1.81e-06.
+    # Fixed-point, because GAMS is picky about numeric literals 
     return f"{v:.{ROUNDDP}f}"
 
 
@@ -87,22 +84,25 @@ def param_block(con, table, parname):
     # over the full domain, so a dropped zero is still fixed to zero. Dropping
     # them keeps the file to the fleet that actually exists.
     df = df[df["level"] != 0.0]
-    if df.empty:
-        # No block at all rather than "parameter x / /", which GAMS may reject.
-        # The parameter is declared in the fix_fleet block regardless, so it
-        # defaults to zero and the capacities are fixed to zero, as intended.
-        print(f"  {table:<26} all zero - no block emitted")
-        return None, 0
 
-    keys = df[dims].astype(str).agg(".".join, axis=1).to_numpy()
-    vals = np.array([fmt(v) for v in df["level"].to_numpy()])
-    rows = np.column_stack((keys, vals))
+    # An all-zero table still gets a block, an empty one. Writing nothing would
+    # leave the parameter declared but unassigned in highres.gms, which is the
+    # same state a misspelled name produces. Emitting the empty block means a
+    # missing block only ever signals a real mismatch, so the model can keep
+    # GAMS's own check on rather than suppressing it.
+    if df.empty:
+        print(f"  {table:<26} all zero - empty block")
+        rows = np.empty((0, 2), dtype=object)
+    else:
+        keys = df[dims].astype(str).agg(".".join, axis=1).to_numpy()
+        vals = np.array([fmt(v) for v in df["level"].to_numpy()])
+        rows = np.column_stack((keys, vals))
 
     return wrapdd(rows, parname, "parameter", outfile=""), len(df)
 
 
 def opex_star(con):
-    """Reference operating cost: total varom across all zones."""
+    """Reference operating cost: total varOM across all zones."""
     total = 0.0
     for table in OPEX_TABLES:
         if not table_exists(con, table):
@@ -114,16 +114,19 @@ def opex_star(con):
 
 
 def main():
+    # Parses the command line
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--from", dest="src", required=True, help="solved results.db")
     ap.add_argument("--to", dest="dst", required=True, help="output .dd file")
     args = ap.parse_args()
 
+    # Gives the pathlib.Path objects for the input and output files, and checks that the input exists.
     src, dst = Path(args.src), Path(args.dst)
     if not src.is_file():
         sys.exit(f"no results.db at {src}")
     dst.parent.mkdir(parents=True, exist_ok=True)
 
+    # Connect to the sqlite database in read-only mode, and extract the parameter blocks and opex* value.
     con = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
     try:
         print(f"reading {src}")
@@ -139,8 +142,7 @@ def main():
         con.close()
 
     if star <= 0.0:
-        # A zero reference would make the cap opex <= 0, infeasible for any
-        # fleet that must generate. Better to stop than emit a poisoned file.
+        # A zero reference would make the cap opex <= 0, infeasible 
         sys.exit(f"opex* came out as {star}, refusing to write {dst}")
 
     header = [
@@ -156,8 +158,7 @@ def main():
             np.savetxt(f, block, delimiter=" ", fmt="%s")
         # Scalar written literally: wrapdd's "scalar" branch emits a one-column
         # block and declares the symbol as a scalar, but fix_fleet declares
-        # par_opex_star as a parameter, and $ONMULTI will not reconcile the
-        # two types.
+        # par_opex_star as a parameter
         f.write(f"parameter\npar_opex_star /\n{fmt(star)}\n/\n\n")
 
     print(f"\nwrote {dst}")

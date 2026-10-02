@@ -1,12 +1,11 @@
 target: "results.db"
 
 # CLIMATE-ROBUST PATHWAYS, t0 on fox. Full year 2010, stock deterministic
-# expansion. This is the real starting fleet, not a shakedown: the local
-# 5-day config only ever existed to prove the pipeline was wired correctly.
+# expansion. 
 #
 # The dispatch run that follows fixes its capacities to this run's solution,
 # so the two must agree on every scenario assumption. Change them here and in
-# config_fox_1year_dispatch.yaml together, or not at all.
+# config_fox_1year_dispatch.yaml together.
 #
 # Launch from inside screen, and check the prompt actually changed first:
 #
@@ -22,22 +21,15 @@ target: "results.db"
 #
 # runtime=86400 rather than the 43200 the other project uses. A full-year
 # expansion has run to 17 h, and a wall-time kill loses the whole solve.
+# Room for improvement here, we can check other runtimes to optimise queuing.
 #
-# Check dusage -p ec85 before launching. A full disk does not announce itself:
-# it surfaces as a plain SLURM FAILED, once as an I/O error 50 s in and once
-# as "Could not spawn gamscmex, rc = 4" after an 8-hour solve.
+# Check dusage -p ec85 before launching.
 
 paths:
-  # GAMS 54.1. 49.4 is refused by the licence server and 52.5's licence has
-  # expired. Trailing slash is required.
   gams: /fp/projects01/ec85/.bin/gams/gams54.1_linux_x64_64_sfx/
   shared_input: shared_input
   # MUST point at THIS project's GAMS submodule on fox, branch pathways.
-  # Pointing it at the other project's checkout silently solves that model.
   abs_shared_code: /fp/projects01/ec85/models/davidac/Article_pathways/highRES-Europe-WF/resources/highRES-Europe-GAMS/
-  # Project storage, which is backed up and permanent. Never $HOME, which has a
-  # 50 GiB quota against a ~1.2 GB results.db, and never /cluster/work, which
-  # is purged after 30 days.
   results: /fp/projects01/ec85/models/davidac/Article_pathways/work_fox_1year_pathways
 
 parameters:
