@@ -12,8 +12,11 @@ CODE=$REPO/resources/highRES-Europe-GAMS
 ACCOUNT=ec85
 TIME=24:00:00     # the partition maximum; full-year solves need it
 
-THREADS=16        # CPLEX threads per solve, identical in every variant
-MEM_GB=60         # per solve. run_gams asks 50 GB for a full-year expansion
+# Set 2026-10-14 from sinfo: the default partition, normal, has 128 cores and
+# 494592 MB per node, so 3 x 30 cores and 3 x 64 GB fit on one node.
+THREADS=30        # CPLEX threads per solve, identical in every variant; = production
+MEM_GB=64         # per solve. run_gams asks 50 GB, and the full-year runs of
+                  # 2026-10-01/02 succeeded with that
 
 # Full-year inputs and the t0 fleet, already on fox from 2026-10-01/02.
 SOURCE_DIR=/fp/projects01/ec85/models/davidac/Article_pathways/work_fox_1year_dispatch/BASE_2010_region
