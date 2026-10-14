@@ -12,11 +12,13 @@ CODE=$REPO/resources/highRES-Europe-GAMS
 ACCOUNT=ec85
 TIME=24:00:00     # the partition maximum; full-year solves need it
 
-# Set 2026-10-14 from sinfo: the default partition, normal, has 128 cores and
-# 494592 MB per node, so 3 x 30 cores and 3 x 64 GB fit on one node.
+# Set 2026-10-14. sinfo: the default partition, normal, has 128 cores and
+# 494592 MB per node. sacct on the full-year solves of 2026-09-30 to 10-02, 30
+# threads each: peaks of 66 GiB (4 h 13) and 103 GiB (6 h 25). So 120 GB per
+# solve, what those jobs requested, and 3 x 30 cores / 3 x 120 GB still fits
+# one node for the one-job variant.
 THREADS=30        # CPLEX threads per solve, identical in every variant; = production
-MEM_GB=64         # per solve. run_gams asks 50 GB, and the full-year runs of
-                  # 2026-10-01/02 succeeded with that
+MEM_GB=120        # per solve
 
 # Full-year inputs and the t0 fleet, already on fox from 2026-10-01/02.
 SOURCE_DIR=/fp/projects01/ec85/models/davidac/Article_pathways/work_fox_1year_dispatch/BASE_2010_region
@@ -40,15 +42,39 @@ GAMS_ARGS=(
 # One GAMS solve in its own directory, with wall time and peak memory recorded
 # per solve. Per-solve memory matters for the one-job variant, where SLURM
 # only reports the job's total.
+#
+# GAMS scratch goes to the compute node's own disk through scrdir, not the
+# project partition: that holds a few GB per solve, and the partition had 62 GB
+# free on 2026-10-14. gamsmatr.dat, the file whose write failed when the disk
+# filled in the other project, is one of the files that moves. GAMS leaves its
+# scratch behind, so it is removed after the solve.
 solve() {
   local dir=$1; shift
   cd "$dir" || return 1
-  local start; start=$(date +%s)
-  if [ -x /usr/bin/time ]; then
-    /usr/bin/time -v "$GAMS/gams" "$CODE/highres.gms" "${GAMS_ARGS[@]}" "$@" lo=2 \
-      > solve.log 2> time.log
+
+  # A failed solve must not leave an earlier run's listing to be read as its
+  # result: collect.sh takes the model status from highres.lst.
+  rm -f highres.lst highres.log results.gdx solve.log time.log wall.txt scratch.txt
+
+  # GNU time takes -v; the BSD one on a Mac does not and fails before GAMS
+  # even starts. Use it only if it works here.
+  local timer=()
+  if /usr/bin/time -v true >/dev/null 2>&1; then timer=(/usr/bin/time -v); fi
+
+  local scrargs=() scr=""
+  scr="${LOCALSCRATCH:-/localscratch}/${USER}-${SLURM_JOB_ID:-nojob}-$(basename "$dir")"
+  if mkdir -p "$scr" 2>/dev/null; then
+    scrargs=(scrdir="$scr")
+    echo "scratch $scr" > scratch.txt
   else
-    "$GAMS/gams" "$CODE/highres.gms" "${GAMS_ARGS[@]}" "$@" lo=2 > solve.log 2>&1
+    scr=""
+    echo "scratch: node-local disk not writable, using the run directory" > scratch.txt
   fi
+
+  local start; start=$(date +%s)
+  "${timer[@]}" "$GAMS/gams" "$CODE/highres.gms" "${GAMS_ARGS[@]}" "$@" \
+    "${scrargs[@]}" lo=2 > solve.log 2> time.log
   echo "wall_s $(( $(date +%s) - start ))" > wall.txt
+
+  [ -n "$scr" ] && rm -rf "${scr:?}"
 }

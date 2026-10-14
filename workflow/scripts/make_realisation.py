@@ -169,11 +169,19 @@ def scale_hydro_inflow(dst, year, cf, gams):
         print(f"  no {gdx.name}, hydro inflow left alone")
         return None
     csv = dst / f"hydro_inflow_tmp.csv"
+    # EpsOut=0: the gdx was written with StoreZero=True, which stores an
+    # explicit zero as GAMS's EPS, and gdxdump prints that as the word "Eps".
+    # Read as text, one "Eps" turns the whole column into strings. Writing the
+    # zeros back with StoreZero=True makes them EPS again, so the file
+    # round-trips exactly.
     with open(csv, "w") as f:
-        run([f"{gams}/gdxdump", str(gdx), "symb=hydro_inflow", "format=csv"],
-            "gdxdump (hydro)", stdout=f)
+        run([f"{gams}/gdxdump", str(gdx), "symb=hydro_inflow", "format=csv",
+             "EpsOut=0"], "gdxdump (hydro)", stdout=f)
     df = pd.read_csv(csv)
     vcol = df.columns[-1]
+    # Any other special value (NA, UNDF, Inf) has no meaning as an inflow, so
+    # stop on it rather than scale it.
+    df[vcol] = pd.to_numeric(df[vcol], errors="raise")
     total_before = float(df[vcol].sum())
     df[vcol] = df[vcol] * cf
     df.to_csv(csv, index=False)

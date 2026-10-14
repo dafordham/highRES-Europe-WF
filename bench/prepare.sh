@@ -49,3 +49,8 @@ setup stress_PL "$BENCH/expand_crossover" 1
 echo "== ready"
 ls "$BENCH"
 grep -H "threads\|solutiontype" "$BENCH"/rank_onejob_median/cplex.opt "$BENCH"/expand_crossover/cplex.opt
+
+echo "== size of the benchmark so far, and what is free. Scratch goes to node-local"
+echo "   disk, so on the partition each solve adds only its results.gdx (~0.3 GB)."
+du -sh "$BENCH"
+dusage -p ec85 | grep ec85 || true
