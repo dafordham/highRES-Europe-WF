@@ -53,8 +53,7 @@ parameters:
   # This is the t0 run: a stock deterministic expansion, capacity free, cost
   # minimised. The fleet it produces is what the dispatch config fixes to.
   fix_fleet: ""        # .dd holding a solved fleet; empty = capacity stays free
-  ens_obj: "OFF"       # ON = minimise energy not served under an opex cap
-  delta: 0.05          # relative slack on opex*; PLACEHOLDER, see note below
+  ens_obj: "OFF"       # ON = minimise energy not served, cost unconstrained
 
   # Options: "OFF","TYNDP","USER"
   trans_inv: "TYNDP"

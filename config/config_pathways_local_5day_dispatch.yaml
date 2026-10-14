@@ -1,4 +1,4 @@
-# CLIMATE-ROBUST PATHWAYS. Dispatch a fixed fleet, min ENS under a cost cap.
+# CLIMATE-ROBUST PATHWAYS. Dispatch a fixed fleet, minimising ENS.
 #
 # This is an OVERLAY, not a standalone config. It carries only what differs from
 # config_pathways_local_5day.yaml and is applied on top of it:
@@ -31,13 +31,7 @@ parameters:
   # capacity in the system is pinned to it. Only dispatch stays free.
   fix_fleet: "fixed_caps"
 
-  # Minimise energy not served subject to varom <= opex* x (1 + delta),
-  # instead of minimising cost.
+  # Minimise energy not served instead of minimising cost. Cost is not
+  # constrained: the operating-cost cap and delta were dropped 2026-10-02, so
+  # ENS is the least unserved energy this fleet can manage at any cost.
   ens_obj: "ON"
-
-  # PLACEHOLDER. The relative slack on the reference operating cost has no
-  # defensible value yet. "find previously used values for delta" is still an
-  # open action from 2026-09-16, and the MGA literature is where it should come
-  # from, since that is the tradition this near-optimal-space formulation sits
-  # in. Nothing interpretive should rest on this number until it is sourced.
-  delta: 0.05

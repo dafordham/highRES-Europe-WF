@@ -52,11 +52,10 @@ parameters:
   # Options: "all"
   co2_target_extent: "all"
 
-  # CLIMATE-ROBUST PATHWAYS switches. t0 is a stock expansion, so both are off
-  # and delta is unused. The dispatch overlay turns them on.
+  # CLIMATE-ROBUST PATHWAYS switches. t0 is a stock expansion, so both are off.
+  # The dispatch overlay turns them on.
   fix_fleet: ""
   ens_obj: "OFF"
-  delta: 0.05
 
   # Options: "OFF","TYNDP","USER"
   trans_inv: "TYNDP"

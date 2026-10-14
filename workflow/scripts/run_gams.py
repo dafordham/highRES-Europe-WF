@@ -25,7 +25,6 @@ args = [
     "--trans_cap_lim=" + str(snakemake.params.trans_cap_lim),
     # Climate-Robust Pathways
     "--ens_obj=" + str(snakemake.params.ens_obj),
-    "--delta=" + str(snakemake.params.delta),
     "--UC=" + str(snakemake.params.unit_commitment),
     "--f_res=" + str(snakemake.params.frequency_response),
     "--store_uc=" + str(snakemake.params.store_uc),

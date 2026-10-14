@@ -1,5 +1,5 @@
-# CLIMATE-ROBUST PATHWAYS, full-year dispatch on fox. Fixed fleet, min ENS
-# under a cost cap.
+# CLIMATE-ROBUST PATHWAYS, full-year dispatch on fox. Fixed fleet,
+# minimising ENS.
 #
 # This is an OVERLAY, not a standalone config. It carries only what differs
 # from config_fox_1year.yaml and is applied on top of it:
@@ -34,9 +34,6 @@ parameters:
   # Name of the .dd holding the solved fleet, without the extension. 
   fix_fleet: "fixed_caps"
 
-  # Minimise energy not served subject to varom <= opex* x (1 + delta),
-  # instead of minimising cost.
+  # Minimise energy not served instead of minimising cost. Cost is not
+  # constrained; the cap and delta were dropped 2026-10-02.
   ens_obj: "ON"
-
-  # PLACEHOLDER for opex tolerance. 
-  delta: 0.05

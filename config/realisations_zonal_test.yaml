@@ -1,0 +1,13 @@
+# TEST realisations for pathway_step.py --realisations-file. Mock stresses,
+# not weather: each scales one country's demand while the rest stay neutral.
+#
+# Zone-asymmetric on purpose. Varying wind against sun cannot force a second
+# expansion -- the expansion buys firm thermal, which is weather-independent.
+# Stressing one country at a time can, because capacity is located and Austria
+# imports at most ~3.5 GW. Run at --tolerance 0.02: at 0.05 the AT stress
+# clears at 4.25% after one expansion and the second never happens.
+- name: median
+- name: stress_PL
+  demand_zone: {PL: 1.45}
+- name: stress_AT
+  demand_zone: {AT: 1.45}

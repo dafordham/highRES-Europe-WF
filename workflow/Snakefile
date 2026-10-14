@@ -606,7 +606,6 @@ rule run_gams:
         # configs that predate these switches keep working unchanged.
         fix_fleet=config["parameters"].get("fix_fleet", ""),
         ens_obj=config["parameters"].get("ens_obj", "OFF"),
-        delta=config["parameters"].get("delta", 0.05),
         unit_commitment=config["parameters"]["unit_commitment"],
         frequency_response=config["parameters"]["frequency_response"],
         store_uc=config["parameters"]["store_uc"],

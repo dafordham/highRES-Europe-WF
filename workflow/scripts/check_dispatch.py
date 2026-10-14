@@ -1,18 +1,13 @@
 """Compare a fixed-fleet dispatch solve against the t0 run that built the fleet.
 
-Climate-Robust Pathways verification. Two things this answers:
+Climate-Robust Pathways verification.
 
 Test A. The dispatch is run against the same weather year the fleet was built
-on, under a cap of opex* x (1 + delta). The t0 dispatch is feasible by
-construction: it served all load at exactly opex*. So the answer is known in
-advance and the solve must return ENS = 0 with the cap slack. Anything else
+on. The t0 dispatch is feasible by construction: it served all load. So the
+answer is known in advance and the solve must return ENS = 0. Anything else
 means the fleet is being fixed incompletely, most likely hydro, or VRE cells
 dropped from the .dd. It is the only point in this project with a ground truth,
 so it is worth spending a solve on before trusting any later ENS.
-
-It also prints the capex:varom ratio from t0, which settles empirically whether
-a relative delta on *total* cost would ever have bound, or whether it would
-have exceeded varom entirely and silently removed all cost discipline.
 
 Usage:
     python3 check_dispatch.py --t0 <t0 results.db> [--dispatch <results.db>]
@@ -90,19 +85,8 @@ def report_t0(con):
     varom = total(con, VAROM_COST)
 
     print("t0 run")
-    print(f"  varom (opex*)            {varom:>16.4f}")
+    print(f"  varom                    {varom:>16.4f}")
     print(f"  capex + FOM + other      {fixed:>16.4f}")
-    if varom > 0:
-        ratio = fixed / varom
-        print(f"  ratio fixed:varom        {ratio:>16.2f}")
-        print()
-        print("  A relative delta on TOTAL cost would give slack")
-        print(f"  delta x (fixed+varom) = delta x {(fixed+varom)/varom:.2f} x varom,")
-        print(f"  i.e. a delta of 0.05 would allow varom to rise by "
-              f"{0.05*(fixed+varom)/varom*100:.1f}%.")
-        if 0.05 * (fixed + varom) / varom >= 1.0:
-            print("  >> That exceeds varom entirely: on total cost the cap")
-            print("     would never bind. Capping varom only is doing real work.")
     return varom
 
 
@@ -121,15 +105,6 @@ def report_dispatch(con, varom_t0):
         if share is not None:
             print(f"  ens_share                {share:>16.8f}")
 
-    cap_dual = scalar(con, "eq_opex_cap", col="marginal")
-    if cap_dual is None:
-        print("  eq_opex_cap absent")
-    else:
-        verdict = "PASS" if abs(cap_dual) <= TOL else "note"
-        print(f"  eq_opex_cap.M            {cap_dual:>16.6f}   [{verdict}] expected 0 (slack)")
-        if abs(cap_dual) > TOL:
-            print(f"     cap is binding. 1/dual = {1.0/cap_dual:,.2f} per unit energy")
-
     co2_dual = total(con, ["eq_co2_target"], col="marginal")
     print(f"  eq_co2_target.M          {co2_dual:>16.6f}")
     if abs(co2_dual) > TOL:
@@ -143,15 +118,10 @@ def report_dispatch(con, varom_t0):
     rel = diff / varom_t0 if varom_t0 else float("nan")
     print(f"  difference               {diff:>16.4f}  ({rel:+.4%})")
 
-    # varom sitting at the cap looks alarming and usually is not. Once ENS
-    # hits zero the objective is indifferent to cost, so every point under the
-    # cap is equally optimal and the simplex stops wherever it stops. The dual
-    # is what says whether the cap actually constrained anything.
-    if ens is not None and abs(ens) <= TOL and cap_dual is not None:
-        if abs(cap_dual) <= TOL:
-            print("\n  varom near the cap with a zero dual is LP degeneracy,")
-            print("  not a binding budget: with ENS at zero the objective no")
-            print("  longer cares what the dispatch costs.")
+    # Nothing constrains cost on an ens_obj solve, so this difference is
+    # reported for information only. A dispatch minimising ENS has no reason to
+    # prefer a cheap generator over an expensive one, and varom can move either
+    # way without saying anything about adequacy.
 
 
 def main():
