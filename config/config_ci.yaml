@@ -63,9 +63,33 @@ parameters:
   EV_scenario: ["BASE"]
   EV_flex: 0
   V2G: "OFF"
-  EV_pcap: 0.011
-  EV_soc_min: 0.2
   EV_soc_max: 0.8
+  EV_soc_min: [
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.7,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+  ]
 
   aggregated_regions: [
     "AT",

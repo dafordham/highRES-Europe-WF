@@ -5,10 +5,11 @@ import pathlib
 import pandas as pd
 
 from data2dd_funcs import (euro_demand2dd, scen2dd, temporal2dd, trans_links,
-                           co2target2dd, add_vre_connection_costs)
+                           co2target2dd, add_vre_connection_costs, apply_capacity_retirement,
+                           apply_transmission_carryforward)
                            
 
-root = pathlib.Path(snakemake.output[0]).parent
+root = pathlib.Path(snakemake.output[1]).parent
 data_root = root
 out = pathlib.Path(".")
 
@@ -16,12 +17,16 @@ out = pathlib.Path(".")
 co2target2dd(
     snakemake.input.co2_targets_db,
     snakemake.output.co2_target,
-    snakemake.params.co2_target_scenario,
+    # snakemake.params.energy_system_scenario,
+    snakemake.wildcards.emission_scenario,
     snakemake.params.co2_target_type,
-    snakemake.params.co2_target_extent)
+    snakemake.params.co2_target_extent,
+    snakemake.params.planning_horizon)
 
 psys_scen = snakemake.wildcards.psys_scenario
-esys_scen = "BASE"
+esys_scen = snakemake.params.energy_system_scenario
+planning_horizon = snakemake.params.planning_horizon
+growth_seed = snakemake.params.growth_seed
 
 scen_db = snakemake.input[1]
 f_techno = snakemake.input[2]
@@ -47,14 +52,15 @@ params_to_write["gen"]["parameter"]["all"] = [
     "startup cost",
     "inertia",
     "unit size",
-    "capex2050",
+    "capex",
     "varom",
     "fom",
-    "fuelcost2050",
+    "fuelcost",
     "cap2area",
     "af",
     "min gen",
     "peak af",
+    "lifetime",
 ]
 
 params_to_write["store"] = {}
@@ -68,8 +74,8 @@ params_to_write["store"]["parameter"]["all"] = [
     "loss_per_hr",
     "p_to_e",
     "varom",
-    "e capex2050",
-    "p capex2050",
+    "e capex",
+    "p capex",
     "fom",
     "af",
     "min down",
@@ -79,6 +85,8 @@ params_to_write["store"]["parameter"]["all"] = [
     "unit size",
     "min gen",
     "max ramp",
+    "e lifetime",
+    "p lifetime",
 ]
 
 zones = pd.read_csv(snakemake.input[0]).loc[:, "zone"]
@@ -96,12 +104,14 @@ scen2dd(
     esys_cap=False,
     exist_cap=True,
     exist_agg=snakemake.wildcards.spatial,
+    planning_horizon=planning_horizon,
 )
 
 trans_links(
     root,
     f_techno,
     aggregated_regions=snakemake.params.aggregated_regions,
+    planning_horizon=planning_horizon,
     out=out,
 )
 
@@ -145,3 +155,19 @@ for yr in years:
         esys_scen,
         yr,
     )
+
+if snakemake.input.prior_ledger:
+    prior_horizon = pathlib.Path(str(snakemake.input.prior_ledger)).parent.name.split("_")[0]
+else:
+    prior_horizon = None
+
+apply_transmission_carryforward(
+    snakemake.output[3], snakemake.input.prior_ledger, f_techno, int(planning_horizon),
+)
+
+apply_capacity_retirement(
+    snakemake.output[1], snakemake.output[2], snakemake.input.prior_ledger, f_techno,
+    int(planning_horizon), snakemake.wildcards.spatial,
+    snakemake.input.gen_database, zones, snakemake.params.baseline_year, prior_horizon,
+    scen_db, psys_scen, growth_seed,growth_scen=snakemake.wildcards.growth_scenario,
+)

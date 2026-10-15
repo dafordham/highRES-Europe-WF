@@ -1,0 +1,10 @@
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - pandas
+  - numpy
+  - python-calamine
+  - pip
+  - pip:
+      - gamsapi[transfer]

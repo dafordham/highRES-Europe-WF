@@ -35,3 +35,4 @@ dependencies:
   - pip
   - pip:
     - cdsapi
+    - gamsapi[transfer]

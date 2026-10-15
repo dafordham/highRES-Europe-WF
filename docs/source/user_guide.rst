@@ -341,8 +341,6 @@ The extension for EV flexibility allows modelling EVs in the storage module by p
 
 * V2G (ON/OFF) = Whether bidirectional charging (vehicle-to-grid (V2G)) is enabled (ON) or disabled (OFF).
 
-* EV_pcap = EV charging power capacity.
-
 * EV_soc_min = Minimum EV battery state-of-charge (SOC).
 
 * EV_soc_max = Maximum EV battery state-of-charge (SOC).

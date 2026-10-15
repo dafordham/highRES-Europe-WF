@@ -8,6 +8,7 @@ args = [
     "gdxCompress=1",
     "--codefolderpath=" + str(snakemake.params.sharedcodepath),
     "--psys_scen=" + str(snakemake.wildcards.psys_scenario),
+    "--esys_scen=" + str(snakemake.params.energy_system_scenario),
     # May bring this back at some stage but commented for now
     #"--co2intensity=" + str(snakemake.params.co2intensity),
     "--co2_target_type=" + str(snakemake.params.co2_target_type),
@@ -31,9 +32,7 @@ args = [
     "--EV=" + snakemake.params.EV,
     "--EV_flex=" + str(snakemake.params.EV_flex),
     "--V2G=" + snakemake.params.V2G,
-    "--EV_pcap=" + str(snakemake.params.EV_pcap),
-    "--EV_soc_min="  + str(snakemake.params.EV_soc_min),
-    "--EV_soc_max="  + str(snakemake.params.EV_soc_max),
+    "--EV_soc_max=" + str(snakemake.params.EV_soc_max),
 ]
 
 # fix_fleet names a .dd holding a solved fleet. Empty means capacity stays free,
@@ -46,12 +45,12 @@ process = subprocess.Popen(
     args,
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
-    cwd=snakemake.params.modelpath,
+    cwd=snakemake.params.horizonpath,
 )
 
 # Below writes gams output to terminal in realtime and log
 
-with open(snakemake.log[0], "w") as f:
+with open(snakemake.log[1], "w") as f:
     while True:
         line = process.stdout.readline()
 
@@ -62,13 +61,13 @@ with open(snakemake.log[0], "w") as f:
 
 # GAMS errors (licensing, compilation, execution) do not raise on their own:
 # they just leave results.gdx missing, which snakemake reports as an opaque
-# "message: None". Fail here with the end of the listing so the real cause is
-# in the first log anyone reads.
+# "message: None". Fail here with the end of the log so the real cause is in
+# the first log anyone reads.
 returncode = process.wait()
 if returncode != 0:
-    with open(snakemake.log[0]) as f:
+    with open(snakemake.log[1]) as f:
         tail = f.read()[-3000:]
     raise RuntimeError(
         f"GAMS exited with code {returncode}.\n"
-        f"--- end of {snakemake.log[0]} ---\n{tail}"
+        f"--- end of {snakemake.log[1]} ---\n{tail}"
     )
