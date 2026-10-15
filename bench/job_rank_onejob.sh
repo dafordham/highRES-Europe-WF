@@ -4,7 +4,13 @@
 # cannot find common.sh relative to itself.
 source "$1"
 
+# A bare `wait` always returns 0, so wait on each solve and fail the job if any
+# of them failed.
+pids=()
 for r in median stress_PL stress_AT; do
   ( solve "$BENCH/rank_onejob_$r" --ens_obj=ON --fix_fleet=fixed_caps ) &
+  pids+=($!)
 done
-wait
+rc=0
+for p in "${pids[@]}"; do wait "$p" || rc=1; done
+exit $rc

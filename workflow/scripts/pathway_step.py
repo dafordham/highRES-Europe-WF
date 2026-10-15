@@ -27,6 +27,14 @@ and still writes the result parameters, where an infeasible fixed-fleet
 dispatch reports ENS = 0 -- indistinguishable from a realisation that clears
 perfectly unless the status is checked.
 
+One exception, for dispatches only: status 7 (feasible, not proven optimal)
+when its ENS share is within the tolerance. A feasible solution's ENS is an
+upper bound on the minimum, and ENS cannot go below zero, so the minimum is
+within the tolerance too. At full year this is the usual outcome for a
+realisation that clears, because with ENS near zero the barrier stalls on a
+flat objective (fox, 2026-10-15: 0.016 GWh/yr after 1.5 h). iterations.csv
+records which proof each result rests on.
+
 Usage:
     python3 pathway_step.py \
         --ledger ../../capacity_ledger.csv --horizon 2030 --zones AT,CZ,HU,PL \
@@ -64,9 +72,11 @@ DEFAULT_REALISATIONS = [
 ]
 
 # modelstat values a result may be read from. 1 optimal, 2 locally optimal,
-# 8 integer solution (unit commitment). Everything else -- 4 and 5 infeasible,
-# 7 intermediate non-optimal, 19 infeasible no solution -- is refused.
+# 8 integer solution (unit commitment). 7, feasible but not proven optimal, is
+# accepted only for a dispatch that clears (see read_outcome). Everything else
+# -- 4 and 5 infeasible, 19 infeasible no solution -- is refused.
 OK_MODELSTAT = {1, 2, 8}
+FEASIBLE_MODELSTAT = 7
 
 # Files that belong to whatever solve last ran in a directory.
 RESULT_FILES = ("results.gdx", "results.db", "results.db.compressed",
@@ -123,22 +133,42 @@ def scalars(db, names):
     return {n: v for n, v in rows}
 
 
-def read_outcome(model_dir, what):
-    """ENS share and solve status, refusing anything non-optimal."""
+def read_outcome(model_dir, what, tolerance=None):
+    """ENS share and solve status, and the proof the result rests on.
+
+    Optimal solves are always accepted. A dispatch passes its tolerance, and
+    then status 7 is accepted too if its ENS share is within it: that ENS is an
+    upper bound on the minimum, so the realisation provably clears. Above the
+    tolerance the minimum could be lower, so it cannot be ranked. Expansions
+    pass no tolerance and must be optimal.
+    """
     s = scalars(model_dir / "results.db", ["o_modelstat", "o_solvestat",
                                            "o_ens_total", "o_ens_share"])
     stat = s.get("o_modelstat")
     if stat is None:
         sys.exit(f"{what}: no o_modelstat in results. Did the solve write a gdx?")
-    if int(stat) not in OK_MODELSTAT:
+    stat = int(stat)
+    if stat in OK_MODELSTAT:
+        s["proof"] = "optimal"
+        return s
+    share = s.get("o_ens_share")
+    if stat == FEASIBLE_MODELSTAT and tolerance is not None and share is not None:
+        if share <= tolerance:
+            s["proof"] = "upper bound"
+            return s
         sys.exit(
-            f"{what}: refusing to use a solve with modelstat {int(stat)}.\n"
-            f"  ENS reported as {s.get('o_ens_total')}, which on an infeasible "
-            f"model means nothing.\n"
-            f"  Look at {model_dir / 'highres.lst'}; `iis 1` in cplex.opt names "
-            f"the conflict."
+            f"{what}: modelstat 7 (feasible, not proven optimal) with ENS share "
+            f"{share:.4%}, above the tolerance {tolerance:.4%}.\n"
+            f"  The true minimum could be lower, so this realisation cannot be "
+            f"ranked.\n  Look at {model_dir / 'highres.lst'}."
         )
-    return s
+    sys.exit(
+        f"{what}: refusing to use a solve with modelstat {stat}.\n"
+        f"  ENS reported as {s.get('o_ens_total')}, which on an infeasible "
+        f"model means nothing.\n"
+        f"  Look at {model_dir / 'highres.lst'}; `iis 1` in cplex.opt names "
+        f"the conflict."
+    )
 
 
 def zone_shares(db, zones):
@@ -203,7 +233,8 @@ def build_realisations(entries, source, work, zones, year, gams):
     return out
 
 
-def dispatch_all(realisations, fleet_dd, work, code, gams, year, jobs, iteration):
+def dispatch_all(realisations, fleet_dd, work, code, gams, year, jobs, iteration,
+                 tolerance):
     """Rank step: one fixed-fleet min-ENS solve per realisation, in parallel."""
     def one(item):
         name, meta = item
@@ -215,9 +246,11 @@ def dispatch_all(realisations, fleet_dd, work, code, gams, year, jobs, iteration
         shutil.copy2(fleet_dd, d / "fixed_caps.dd")
         wall = solve(d, code, gams, year,
                      ["--ens_obj=ON", "--fix_fleet=fixed_caps"])
-        s = read_outcome(d, f"iteration {iteration}, realisation {name}")
+        s = read_outcome(d, f"iteration {iteration}, realisation {name}",
+                         tolerance)
         return name, {"dir": d, "wall": wall, "share": s["o_ens_share"],
-                      "ens": s["o_ens_total"], "modelstat": int(s["o_modelstat"])}
+                      "ens": s["o_ens_total"], "modelstat": int(s["o_modelstat"]),
+                      "proof": s["proof"]}
 
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         return dict(pool.map(one, realisations.items()))
@@ -335,12 +368,14 @@ def main():
     log, previous_worst = [], None
     for iteration in range(1, args.max_iter + 1):
         res = dispatch_all(realisations, fleet_dd, work, code, args.gams,
-                           args.year, args.jobs, iteration)
+                           args.year, args.jobs, iteration, args.tolerance)
         ranked = sorted(res.items(), key=lambda kv: kv[1]["share"], reverse=True)
 
         print(f"iteration {iteration}: rank")
         for name, r in ranked:
             flag = "FAIL" if r["share"] > args.tolerance else "ok"
+            if r["proof"] != "optimal":
+                flag += ", " + r["proof"]
             print(f"  {name:<8} share {r['share']:>9.4%}  ENS {r['ens']:>12,.1f} GWh"
                   f"  {r['wall']:>6.1f}s  [{flag}]")
 
@@ -348,7 +383,8 @@ def main():
         for name, r in res.items():
             log.append({"iteration": iteration, "realisation": name,
                         "share": r["share"], "ens_gwh": r["ens"],
-                        "modelstat": r["modelstat"], "wall_s": round(r["wall"], 1)})
+                        "modelstat": r["modelstat"], "proof": r["proof"],
+                        "wall_s": round(r["wall"], 1)})
 
         if worst["share"] <= args.tolerance:
             print(f"\nall realisations within tolerance at iteration {iteration}")

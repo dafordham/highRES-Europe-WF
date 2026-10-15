@@ -43,38 +43,25 @@ GAMS_ARGS=(
 # per solve. Per-solve memory matters for the one-job variant, where SLURM
 # only reports the job's total.
 #
-# GAMS scratch goes to the compute node's own disk through scrdir, not the
-# project partition: that holds a few GB per solve, and the partition had 62 GB
-# free on 2026-10-14. gamsmatr.dat, the file whose write failed when the disk
-# filled in the other project, is one of the files that moves. GAMS leaves its
-# scratch behind, so it is removed after the solve.
+# GAMS keeps its temporary files in the run directory, inside the project
+# folder. Returns GAMS's own exit code, so a SLURM FAILED means GAMS failed.
 solve() {
   local dir=$1; shift
   cd "$dir" || return 1
 
   # A failed solve must not leave an earlier run's listing to be read as its
   # result: collect.sh takes the model status from highres.lst.
-  rm -f highres.lst highres.log results.gdx solve.log time.log wall.txt scratch.txt
+  rm -f highres.lst highres.log results.gdx solve.log time.log wall.txt
 
   # GNU time takes -v; the BSD one on a Mac does not and fails before GAMS
   # even starts. Use it only if it works here.
   local timer=()
   if /usr/bin/time -v true >/dev/null 2>&1; then timer=(/usr/bin/time -v); fi
 
-  local scrargs=() scr=""
-  scr="${LOCALSCRATCH:-/localscratch}/${USER}-${SLURM_JOB_ID:-nojob}-$(basename "$dir")"
-  if mkdir -p "$scr" 2>/dev/null; then
-    scrargs=(scrdir="$scr")
-    echo "scratch $scr" > scratch.txt
-  else
-    scr=""
-    echo "scratch: node-local disk not writable, using the run directory" > scratch.txt
-  fi
-
-  local start; start=$(date +%s)
+  local start rc; start=$(date +%s)
   "${timer[@]}" "$GAMS/gams" "$CODE/highres.gms" "${GAMS_ARGS[@]}" "$@" \
-    "${scrargs[@]}" lo=2 > solve.log 2> time.log
+    lo=2 > solve.log 2> time.log
+  rc=$?
   echo "wall_s $(( $(date +%s) - start ))" > wall.txt
-
-  [ -n "$scr" ] && rm -rf "${scr:?}"
+  return $rc
 }
