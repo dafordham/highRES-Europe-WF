@@ -31,7 +31,7 @@ A realisation is a set of factors. Two ways to use them:
 
 What gets scaled:
 
-  * demand      BASE_demand_<year>.dd, in scope only; out-of-scope zones go to
+  * demand      <esys>_demand_<year>.dd, in scope only; out-of-scope zones go to
                 zero, which is what makes the test an island
   * VRE cf      vre_<year>_.parquet -> csv -> gdx, clipped at 1.0 because a
                 capacity factor above nameplate is unphysical and the source
@@ -127,11 +127,19 @@ def scale_demand(path, factor, zones, per_zone=None):
     return kept, zeroed
 
 
-def scale_vre(dst, year, cf, per_tech, gams):
-    """Scale capacity factors per technology, clip at 1.0, rebuild the gdx."""
+def scale_vre(dst, year, cf, per_tech, gams, source_parquet=None):
+    """Scale capacity factors per technology, clip at 1.0, rebuild the gdx.
+
+    The workflow's milestone directories hold the VRE gdx but not the parquet
+    it was built from, which stays in the shared directory. source_parquet
+    points at it then.
+    """
     pq = dst / f"vre_{year}_.parquet"
+    if source_parquet:
+        shutil.copy2(source_parquet, pq)
     if not pq.is_file():
-        sys.exit(f"no {pq.name} in the source directory: cannot rescale VRE")
+        sys.exit(f"no {pq.name} in the source directory: cannot rescale VRE. "
+                 "Pass --vre-parquet")
     df = pd.read_parquet(pq)
     col = df.columns[0]
     before = float(df[col].max())
@@ -220,6 +228,11 @@ def main():
     ap.add_argument("--zones", required=True, help="in scope, comma separated")
     ap.add_argument("--year", default="2010")
     ap.add_argument("--gams", default=GAMS_DEFAULT, help="GAMS Resources directory")
+    ap.add_argument("--esys", default="BASE",
+                    help="energy system scenario, which names the demand file")
+    ap.add_argument("--vre-parquet",
+                    help="capacity factors to rescale, when the source "
+                         "directory does not hold vre_<year>_.parquet")
     args = ap.parse_args()
 
     src, dst = Path(args.src), Path(args.dst)
@@ -237,7 +250,7 @@ def main():
         z, _, val = item.partition("=")
         per_zone[z.strip()] = float(val)
 
-    kept, zeroed = scale_demand(dst / f"BASE_demand_{args.year}.dd", args.demand,
+    kept, zeroed = scale_demand(dst / f"{args.esys}_demand_{args.year}.dd", args.demand,
                                 zones, per_zone)
     print(f"  demand in scope  {kept:>14,.0f}  (x {args.demand})")
     for z, f in sorted(per_zone.items()):
@@ -249,14 +262,24 @@ def main():
         tech, _, val = item.partition("=")
         per_tech[tech.strip()] = float(val)
 
-    before, after, clipped = scale_vre(dst, args.year, args.cf, per_tech, args.gams)
-    print(f"  cf max {before:.4f} -> {after:.4f}" + (f", {clipped} cells clipped at 1.0" if clipped else ""))
-    for tech, f in sorted(per_tech.items()):
-        print(f"    {tech:<20} x {f}")
+    # A realisation that only moves demand leaves the capacity factors as they
+    # are, which at full year saves rebuilding a large gdx for nothing.
+    if args.cf == 1.0 and all(f == 1.0 for f in per_tech.values()):
+        print("  capacity factors unchanged")
+    else:
+        before, after, clipped = scale_vre(dst, args.year, args.cf, per_tech,
+                                           args.gams, args.vre_parquet)
+        print(f"  cf max {before:.4f} -> {after:.4f}" + (f", {clipped} cells clipped at 1.0" if clipped else ""))
+        for tech, f in sorted(per_tech.items()):
+            print(f"    {tech:<20} x {f}")
 
-    hy = scale_hydro_inflow(dst, args.year, per_tech.get("HydroRes", args.cf), args.gams)
-    if hy:
-        print(f"  hydro inflow {hy[0]:,.0f} -> {hy[1]:,.0f}")
+    hydro_factor = per_tech.get("HydroRes", args.cf)
+    if hydro_factor == 1.0:
+        print("  hydro inflow unchanged")
+    else:
+        hy = scale_hydro_inflow(dst, args.year, hydro_factor, args.gams)
+        if hy:
+            print(f"  hydro inflow {hy[0]:,.0f} -> {hy[1]:,.0f}")
 
     print("\nThis is a scaled 2010, not a climate realisation. Nothing about")
     print("adequacy can be read off it; it exists to exercise the loop.")

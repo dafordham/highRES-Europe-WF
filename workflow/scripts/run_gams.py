@@ -1,38 +1,17 @@
 import subprocess
 
+from gams_args import gams_settings
+
 # TODO - test on linux
 
+# The settings live in gams_args.py, shared with run_robust_loop.py, so a
+# milestone solved by the robust loop uses exactly the settings of this rule.
 args = [
     snakemake.params.gamspath + "gams",
     snakemake.params.sharedcodepath / "highres.gms",
-    "gdxCompress=1",
-    "--codefolderpath=" + str(snakemake.params.sharedcodepath),
-    "--psys_scen=" + str(snakemake.wildcards.psys_scenario),
-    "--esys_scen=" + str(snakemake.params.energy_system_scenario),
-    # May bring this back at some stage but commented for now
-    #"--co2intensity=" + str(snakemake.params.co2intensity),
-    "--co2_target_type=" + str(snakemake.params.co2_target_type),
-    "--co2_target_extent=" + str(snakemake.params.co2_target_extent),
-    "--weather_yr=" + str(snakemake.wildcards.year),
-    "--dem_yr=" + str(snakemake.wildcards.year),
-    "--outname=" + snakemake.params.outname,
-    "--store_initial_level=" + str(snakemake.params.store_initial_level),
-    "--store_final_level=" + str(snakemake.params.store_final_level),
-    "--hydro_res_initial_fill=" + str(snakemake.params.hydro_res_initial_fill),
-    "--hydro_res_min=" + str(snakemake.params.hydro_res_min),
-    "--pgen=" + str(snakemake.params.pgen),
-    "--emis_price=" + str(snakemake.params.emis_price),
-    "--trans_inv=" + str(snakemake.params.trans_inv),
-    "--trans_cap_lim=" + str(snakemake.params.trans_cap_lim),
+    *gams_settings(snakemake.params, snakemake.wildcards),
     # Climate-Robust Pathways
     "--ens_obj=" + str(snakemake.params.ens_obj),
-    "--UC=" + str(snakemake.params.unit_commitment),
-    "--f_res=" + str(snakemake.params.frequency_response),
-    "--store_uc=" + str(snakemake.params.store_uc),
-    "--EV=" + snakemake.params.EV,
-    "--EV_flex=" + str(snakemake.params.EV_flex),
-    "--V2G=" + snakemake.params.V2G,
-    "--EV_soc_max=" + str(snakemake.params.EV_soc_max),
 ]
 
 # fix_fleet names a .dd holding a solved fleet. Empty means capacity stays free,

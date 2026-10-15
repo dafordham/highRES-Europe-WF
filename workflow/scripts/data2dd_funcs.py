@@ -733,6 +733,11 @@ def patch_gen_database_mandate(blocks, lim_block_name, existing_z, mandate_z):
 
         up_value = up_lookup.get((zone, tech))
         if up_value is not None and lo_final > up_value:
+            # pathways
+            # Part of a plant under construction disappears here, so say so.
+            print(f"WARNING {lim_block_name} {zone}.{tech}: existing plus under "
+                  f"construction is {lo_final:.4f} GW, above the growth ceiling "
+                  f"{up_value:.4f} GW. Cut to the ceiling.")
             lo_final = up_value     # option to choose: UP=LO or LO=UP
 
         for lt in ("FX", "LO"):          # need to remove FX to must build planned capacity

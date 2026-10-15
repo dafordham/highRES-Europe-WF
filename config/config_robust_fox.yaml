@@ -1,0 +1,266 @@
+target: "results.db.compressed"
+
+# CLIMATE-ROBUST PATHWAYS, the whole pathway with the robust loop, on fox, full
+# year. In the format of Shahzad and Guillermo's pathway_planning Snakefile:
+# their inputs step retires plant and sets each milestone's limits, the robust
+# loop solves the milestone, their ledger step carries what was built forward.
+#
+# Launch from inside screen on a login node, and check the prompt changed:
+#
+#   screen -S robust
+#   snakemake --configfile config/config_robust_fox.yaml --rerun-incomplete \
+#     --executor slurm --default-resources slurm_account=ec85 runtime=720 \
+#     mem_mb_per_cpu=4000 --keep-going --latency-wait 30 -j 20 -c 30
+#
+# The input rules go to SLURM through the executor. run_robust_loop is a local
+# rule: it runs here, on the login node, and submits every GAMS solve as its
+# own job (robust.submit: slurm). Snakemake does not see those jobs. Follow a
+# milestone in <milestone>/robust/loop.log, or with squeue, where they are
+# named rob_<iteration>_<realisation>.
+#
+# A crash, a lost connection or a killed screen: rerun the same command. The
+# loop picks up where it stopped, and waits for jobs still in the queue rather
+# than submitting them again.
+#
+# runtime is in MINUTES. 720 is 12 h, which got benchmark jobs started within
+# an hour where 24 h waited days. It applies to the input rules here; the
+# loop's own jobs take their limits from the robust block below.
+#
+# Check dusage -p ec85 before launching. Each milestone keeps about 1.5 GB per
+# expansion and per final dispatch, plus a few GB while solving.
+#
+# Needs two files that are not in git and come from them:
+# resources/gen_database.csv and resources/europe_demand_<esys>_<horizon>.csv,
+# and their version of highres_technoeconomic_database.ods (growth rates, the
+# Installed year column for transmission).
+#
+# One value per scenario list, so one pathway. Every list multiplies the
+# number of pathways.
+
+paths:
+  gams: /fp/projects01/ec85/.bin/gams/gams54.1_linux_x64_64_sfx/  # slash at the end is required
+  shared_input: shared_input
+  # MUST point at THIS project's GAMS submodule (branch: pathways). Pointing it
+  # at Article_Marianne silently solves the other project's model.
+  abs_shared_code: /fp/projects01/ec85/models/davidac/Article_pathways/highRES-Europe-WF/resources/highRES-Europe-GAMS/
+  results: /fp/projects01/ec85/models/davidac/Article_pathways/work_fox_robust
+
+# The robust loop (rule run_robust_loop, workflow/scripts/pathway_step.py).
+# With enabled: false every milestone is one ordinary expansion (run_gams), as
+# in their workflow, which gives the deterministic pathway to compare against.
+robust:
+  enabled: true
+  # Realisations per milestone. Mock ones, scaled from the weather year, until
+  # C2E. A yaml list, see the file.
+  realisations: config/realisations_zonal_test.yaml
+  # ENS share of each realisation's own demand. A placeholder, nowhere near a
+  # reliability standard.
+  tolerance: 0.05
+  max_iter: 5
+  # Dispatches submitted at once
+  jobs: 3
+  # local runs GAMS here. slurm submits every solve as its own job.
+  submit: slurm
+  account: ec85
+  # Measured on fox 2026-10-15, full year, 28 zones, 30 threads: dispatch
+  # 1.5 to 2.7 h at about 45 GB, expansion 3.6 h at 63 GB.
+  mem_dispatch: 64G
+  mem_expansion: 80G
+  time_dispatch: "12:00:00"
+  time_expansion: "12:00:00"
+
+parameters:
+  mode: [
+    "normal",
+  ]
+  # One weather year for every milestone, or one per milestone.
+  years: [
+    "2010",
+  ]
+  spatials: [
+    "region",
+  ]
+
+  windoff_floating: True
+  power_system_scenario: ["BASE"]
+  energy_system_scenario: ["BASE"]
+
+  planning_horizons: ["2030", "2035", "2040", "2045", "2050"]
+
+  # Year up to which existing capacity is taken for the first milestone
+  baseline_year: 2026
+
+  # Allowance (MW) per technology for the growth-rate ceiling, so a technology
+  # with little or no build history is not capped at zero growth. Anything not
+  # listed gets 0. Their values.
+  gen_growth_seed_mw:
+    Solar: 1000
+    Windonshore: 1000
+    Windoffshore: 1000
+    WindoffshoreFloat: 1000
+    HydroRoR: 1000
+
+  # Growth rate scenarios, defined in the technoeconomic database
+  growth_rate_scenarios: ["early"]
+
+  # Options: "intensity", "budget"
+  co2_target_type: "intensity"
+
+  # Options: "all"
+  co2_target_extent: "all"
+
+  emission_scenarios: ["BASE"]
+  solar_scenarios: ["low"]
+  wind_scenarios: ["low"]
+
+  # Options: "OFF","TYNDP","USER"
+  trans_inv: ["TYNDP"]
+
+  # Only used if trans_inv set to USER
+  trans_cap_lim: 20
+
+  # Stock expansion switches for run_gams. The robust loop sets its own.
+  fix_fleet: ""
+  ens_obj: "OFF"
+
+  bias_correction: True
+
+  elevation_excl: False
+  onshore_slope_excl: True
+  include_rooftop: True
+
+  unit_commitment: "OFF"
+  frequency_response: "OFF"
+  store_uc: "OFF"
+
+  emis_price: 0
+  store_initial_level: 0.5
+  store_final_level: 0.5
+  hydro_res_initial_fill: 0.8
+  hydro_res_min: 0.5
+  pgen: 20.0
+
+  cutoff_solar: 0.09
+  cutoff_onwind: 0.1
+  cutoff_offwind: 0.20
+
+  # Format is MM-DD, end date inclusive. Full year.
+  date_range: ["01-01", "12-31"]
+
+  EV: "OFF"
+  EV_scenario: ["BASE"]
+  EV_flex: 0
+  V2G: "OFF"
+  EV_soc_max: 0.8
+  # Hourly minimum state of charge, 24 values, as in their config
+  EV_soc_min: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.7, 0.2, 0.2, 0.2, 0.2,
+               0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
+
+  # Full 28-zone set — MUST match config_ci.yaml. Changing this list invalidates
+  # intermediate_data/ and forces the two ~50 GB input rules to re-run, which the
+  # 18 GB laptop cannot do. Restrict local cost via date_range instead.
+  aggregated_regions: [
+    "AT",
+    "BE",
+    "BG",
+    "CH",
+    "CZ",
+    "DE",
+    "DK",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "UK",
+    "GR",
+    "HR",
+    "HU",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "NL",
+    "NO",
+    "PL",
+    "PT",
+    "RO",
+    "SE",
+    "SI",
+    "SK",
+  ]
+  solar_clc : [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    30,
+    31,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+  ]
+  onwind_clc_no_buffer : [
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    23,
+    24,
+    25,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+  ]
+  onwind_clc_buffer : {
+    1 : 1000,
+    2 : 1000,
+    6 : 5000,
+  }
+  windturbines : {
+    "onshore" : "Vestas_V112_3MW",
+    "offshore_bottom" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+    "offshore_float" : "NREL_ReferenceTurbine_2020ATB_15MW_offshore",
+  }
+
+  wind_smooth: False
+  windon_af: 0.95
+  windoff_bottom_af: 0.95
+  windoff_floating_af: 0.95
+
+cplex_options:
+  lpmethod: 4
+  solutiontype: 2
+  # Also the CPUs each solve job asks for
+  threads: 30
+  predual: 1
+  BarOrder: 0
+  barepcomp: 1E-7

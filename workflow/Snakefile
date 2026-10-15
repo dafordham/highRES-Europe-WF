@@ -174,6 +174,9 @@ localrules:
     build_ev_inputs,
     build_inputs,
     # pathways
+    # run_robust_loop only coordinates: with robust.submit = slurm it submits
+    # every GAMS solve as its own job, so it runs on the login node.
+    run_robust_loop,
     # run_gams is deliberately NOT listed here. As a local rule it executes in
     # the Snakemake process itself, which on fox means the solve runs on the
     # login node. Leave it out so --executor slurm submits it as a job.
@@ -659,47 +662,59 @@ rule build_inputs:
 # the model has run, need to be listed as an input both here and in the rule
 # "build_inputs". If they are only listed in "build_inputs", but not here, they
 # would be deleted before the model runs and so the run breaks.
+gams_inputs = [
+    shared_code_path + "highres.gms",
+    shared_code_path + "highres_data_input.gms",
+    shared_code_path + "highres_hydro.gms",
+    shared_code_path + "highres_results.gms",
+    shared_code_path + "highres_storage_setup.gms",
+    shared_code_path + "highres_storage_uc_setup.gms",
+    shared_code_path + "highres_uc_setup.gms",
+    horizonpath / "inputs.finished",
+    sharedpath / "vre_{year}_.gdx",
+]
+
+# pathways
+# The scenario settings of a solve, shared by run_gams and run_robust_loop so
+# that both solve a milestone the same way. workflow/scripts/gams_args.py turns
+# them into GAMS arguments.
+gams_params = dict(
+    gamspath=gamspath,
+    #co2intensity=config["parameters"]["co2target"],
+    co2_target_type=config["parameters"]["co2_target_type"],
+    co2_target_extent=config["parameters"]["co2_target_extent"],
+    energy_system_scenario=lambda wildcards: wildcards.esys_scenario,
+    sharedcodepath=abs_gams_code_path,
+    outname="results",
+    store_initial_level=config["parameters"]["store_initial_level"],
+    store_final_level=config["parameters"]["store_final_level"],
+    hydro_res_initial_fill=config["parameters"]["hydro_res_initial_fill"],
+    hydro_res_min=config["parameters"]["hydro_res_min"],
+    pgen=config["parameters"]["pgen"],
+    emis_price=config["parameters"]["emis_price"],
+    # trans_inv=config["parameters"]["trans_inv"],
+    trans_inv=lambda wildcards: wildcards.transmission_scenario,
+    trans_cap_lim=config["parameters"]["trans_cap_lim"],
+    unit_commitment=config["parameters"]["unit_commitment"],
+    frequency_response=config["parameters"]["frequency_response"],
+    store_uc=config["parameters"]["store_uc"],
+    EV=config["parameters"]["EV"],
+    EV_flex = config["parameters"]["EV_flex"],
+    V2G=config["parameters"]["V2G"],
+    EV_soc_max=config["parameters"]["EV_soc_max"],
+)
+
 rule run_gams:
     input:
-        shared_code_path + "highres.gms",
-        shared_code_path + "highres_data_input.gms",
-        shared_code_path + "highres_hydro.gms",
-        shared_code_path + "highres_results.gms",
-        shared_code_path + "highres_storage_setup.gms",
-        shared_code_path + "highres_storage_uc_setup.gms",
-        shared_code_path + "highres_uc_setup.gms",
-        horizonpath / "inputs.finished",
-        sharedpath / "vre_{year}_.gdx",
+        gams_inputs,
     params:
-        gamspath=gamspath,
+        **gams_params,
         horizonpath=lambda wildcards, output: str(pathlib.Path(output.modelresults).parent),
-        #co2intensity=config["parameters"]["co2target"],
-        co2_target_type=config["parameters"]["co2_target_type"],
-        co2_target_extent=config["parameters"]["co2_target_extent"],
-        energy_system_scenario=lambda wildcards: wildcards.esys_scenario,
-        sharedcodepath=abs_gams_code_path,
-        outname="results",
-        store_initial_level=config["parameters"]["store_initial_level"],
-        store_final_level=config["parameters"]["store_final_level"],
-        hydro_res_initial_fill=config["parameters"]["hydro_res_initial_fill"],
-        hydro_res_min=config["parameters"]["hydro_res_min"],
-        pgen=config["parameters"]["pgen"],
-        emis_price=config["parameters"]["emis_price"],
-        # trans_inv=config["parameters"]["trans_inv"],
-        trans_inv="{transmission_scenario}",
-        trans_cap_lim=config["parameters"]["trans_cap_lim"],
         # pathways
         # Climate-Robust Pathways: default to a stock expansion run so existing
         # configs that predate these switches keep working unchanged.
         fix_fleet=config["parameters"].get("fix_fleet", ""),
         ens_obj=config["parameters"].get("ens_obj", "OFF"),
-        unit_commitment=config["parameters"]["unit_commitment"],
-        frequency_response=config["parameters"]["frequency_response"],
-        store_uc=config["parameters"]["store_uc"],
-        EV=config["parameters"]["EV"],
-        EV_flex = config["parameters"]["EV_flex"],
-        V2G=config["parameters"]["V2G"],
-        EV_soc_max=config["parameters"]["EV_soc_max"],
     # pathways
     # The SLURM executor derives cpus_per_task from threads when
     # cpus_per_task is not given as a resource, so this is what sizes the
@@ -720,6 +735,42 @@ rule run_gams:
         # modelresultsdd=protected(modelpath / "results.db"),
     script:
         "scripts/run_gams.py"
+
+
+# pathways
+# Climate-Robust Pathways. With robust.enabled in the config, a milestone is
+# solved by the robust loop instead of one expansion: dispatch the fleet
+# against every realisation, expand on the worst, repeat until all clear
+# (workflow/scripts/pathway_step.py). Both rules write the same results.gdx,
+# so the ruleorder picks one and every rule after it is unchanged. The other
+# settings are documented in config/config_robust_local_5day.yaml.
+robust = config.get("robust", {})
+
+if robust.get("enabled", False):
+    ruleorder: run_robust_loop > run_gams
+else:
+    ruleorder: run_gams > run_robust_loop
+
+
+rule run_robust_loop:
+    input:
+        gams_inputs,
+        realisations=robust.get("realisations", "config/realisations.yaml"),
+        vre_parquet=sharedpath / "vre_{year}_.parquet",
+    params:
+        **gams_params,
+        horizonpath=lambda wildcards, output: str(pathlib.Path(output.modelresults).parent),
+        robust=robust,
+        zones=aggregated_regions,
+        # CPUs per solve job. Equal to the CPLEX threads by construction.
+        threads=config["cplex_options"]["threads"],
+        scriptsdir=pathlib.Path(workflow.basedir) / "scripts",
+    log:
+        str(horizonpath) + "/robust/loop.log",
+    output:
+        modelresults=protected(horizonpath / "results.gdx"),
+    script:
+        "scripts/run_robust_loop.py"
 
 
 rule convert_results:

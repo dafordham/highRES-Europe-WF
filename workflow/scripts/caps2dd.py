@@ -88,6 +88,10 @@ def read_table(con, table):
     dims = [c for c in df.columns if c not in VALUE_COLS]
     if not dims:
         raise ValueError(f"{table} has no set dimensions")
+    # A variable with no records at all (every level zero, no bound ever
+    # assigned) comes out of gamstool as a table of set columns only.
+    if "level" not in df.columns:
+        return {}
 
     df = df[dims + ["level"]].copy()
     df["level"] = df["level"].astype(float).round(ROUNDDP)
