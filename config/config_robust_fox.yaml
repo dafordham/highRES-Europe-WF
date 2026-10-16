@@ -10,7 +10,14 @@ target: "results.db.compressed"
 #   screen -S robust
 #   snakemake --configfile config/config_robust_fox.yaml --rerun-incomplete \
 #     --executor slurm --default-resources slurm_account=ec85 runtime=720 \
-#     mem_mb_per_cpu=4000 --keep-going --latency-wait 30 -j 20 -c 30
+#     mem_mb_per_cpu=4000 --keep-going --latency-wait 30 -j 20 -c 30 \
+#     --rerun-triggers mtime
+#
+# Without a target this runs every milestone. To stop after one, give its
+# results.db.compressed as the FIRST argument, as an absolute path (the
+# Snakefile builds absolute output paths, and --rerun-triggers would swallow
+# a target placed after it). --rerun-triggers mtime stops their changed
+# build_vre_cf_grid notebook from forcing that rule to rerun.
 #
 # The input rules go to SLURM through the executor. run_robust_loop is a local
 # rule: it runs here, on the login node, and submits every GAMS solve as its
