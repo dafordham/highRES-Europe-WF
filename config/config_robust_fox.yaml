@@ -100,8 +100,11 @@ parameters:
     WindoffshoreFloat: 1000
     HydroRoR: 1000
 
-  # Growth rate scenarios, defined in the technoeconomic database
-  growth_rate_scenarios: ["early"]
+  # Growth rate scenarios, defined in the technoeconomic database. "UP"
+  # because that is the label their growth rows carry (2026-10-16); their code
+  # keeps only rows labelled with the scenario. Back to their names once the
+  # spreadsheet has them.
+  growth_rate_scenarios: ["UP"]
 
   # Options: "intensity", "budget"
   co2_target_type: "intensity"
