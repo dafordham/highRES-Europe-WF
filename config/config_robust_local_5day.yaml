@@ -21,7 +21,8 @@ paths:
   # MUST point at THIS project's GAMS submodule (branch: pathways). Pointing it
   # at Article_Marianne silently solves the other project's model.
   abs_shared_code: /Users/davidfordham/Library/CloudStorage/OneDrive-UniversitetetiOslo/Article_pathways/highRES-Europe-WF/resources/highRES-Europe-GAMS/
-  results: work_local_5day_robust/pathway
+  # Short: GAMS fails on solve directories longer than about 212 characters
+  results: work_local_5day_robust
 
 # The robust loop (rule run_robust_loop, workflow/scripts/pathway_step.py).
 # With enabled: false every milestone is one ordinary expansion (run_gams), as

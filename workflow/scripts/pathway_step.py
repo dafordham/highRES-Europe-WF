@@ -65,6 +65,11 @@ SOLVE_ARGS = [
 
 SCALARS = ["o_modelstat", "o_solvestat", "o_ens_total", "o_ens_share"]
 
+# GAMS fails to load CPLEX when the solve directory's path is longer than about
+# 212 characters ("Could not find algorithm CPL", status 13), and cannot even
+# compile past about 228. Measured on GAMS 53, 2026-10-16.
+MAX_PATH = 210
+
 
 def say(*a):
     print(*a, flush=True)
@@ -334,7 +339,7 @@ def rank(realisations, fleet_dd, work, runner, iteration, tolerance):
 
     def one(item):
         name, r = item
-        d = work / f"iter{iteration}" / f"dispatch_{name}"
+        d = work / f"iter{iteration}" / name
         copy_inputs(r["dir"], d)
         shutil.copy2(fleet_dd, d / "fixed_caps.dd")
         key = sha(fleet_key, r["key"], *runner.settings, "dispatch")
@@ -413,6 +418,12 @@ def main():
     realisations = build_realisations(args.realisations_file, args.model_dir, work,
                                       zones, settings, args.gams, args.vre_parquet)
     say(f"realisations: {', '.join(realisations)}\n")
+
+    longest = max(len(str(work / f"iter{args.max_iter}" / n)) for n in [*realisations, "expansion"])
+    if longest > MAX_PATH:
+        sys.exit(f"solve directories would be up to {longest} characters long, over "
+                 f"{MAX_PATH}, and GAMS then fails to load CPLEX. Use a shorter "
+                 f"results path or shorter realisation names.")
 
     log, previous_worst, final_dir = [], None, None
     for iteration in range(1, args.max_iter + 1):
