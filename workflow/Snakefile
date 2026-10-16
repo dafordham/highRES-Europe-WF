@@ -156,8 +156,9 @@ localrules:
     build_technoeconomic_inputs,
     build_zones_file,
     build_shapes,
-    build_vre_cf_grid,
-    build_vre_land_avail,
+    # pathways
+    # build_vre_cf_grid and build_vre_land_avail need ~50 GB each, so they are
+    # not local: on fox a local rule runs on the login node.
     build_vre_cf_inputs,
     build_vre_areas_file,
     build_vre_file,
