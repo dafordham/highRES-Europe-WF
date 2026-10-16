@@ -9,7 +9,7 @@ target: "results.db.compressed"
 #
 #   screen -S robust
 #   snakemake --configfile config/config_robust_fox.yaml --rerun-incomplete \
-#     --executor slurm --default-resources slurm_account=ec85 runtime=720 \
+#     --executor slurm --default-resources slurm_account=ec85 runtime=12h \
 #     mem_mb_per_cpu=4000 --keep-going --latency-wait 30 -j 20 -c 30 \
 #     --rerun-triggers mtime
 #
@@ -29,9 +29,10 @@ target: "results.db.compressed"
 # loop picks up where it stopped, and waits for jobs still in the queue rather
 # than submitting them again.
 #
-# runtime is in MINUTES. 720 is 12 h, which got benchmark jobs started within
-# an hour where 24 h waited days. It applies to the input rules here; the
-# loop's own jobs take their limits from the robust block below.
+# Give runtime WITH a unit. A plain number is read as SECONDS: runtime=720
+# gave a 12-minute limit (fox, 2026-10-16). 12 h got benchmark jobs started
+# within an hour where 24 h waited days. It applies to the input rules here;
+# the loop's own jobs take their limits from the robust block below.
 #
 # Check dusage -p ec85 before launching. Each milestone keeps about 1.5 GB per
 # expansion and per final dispatch, plus a few GB while solving.
