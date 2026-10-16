@@ -189,9 +189,7 @@ def main():
     ap.add_argument("--to", dest="dst", required=True, help="output .dd file")
     ap.add_argument("--zones", default="",
                     help="comma separated zones this fleet covers, written as "
-                         "the fleet_zones set. Empty means the whole model. "
-                         "Must match what ledger2dd.py used, or an expansion "
-                         "starts building outside the intended scope")
+                         "the fleet_zones set. Empty means the whole model")
     ap.add_argument("--floor", type=float, default=MIN_CAPACITY_GW,
                     help="drop assets below this many GW as solver dust "
                          f"(default {MIN_CAPACITY_GW}); applied per asset, so "

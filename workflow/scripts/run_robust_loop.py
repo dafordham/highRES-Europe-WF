@@ -32,7 +32,6 @@ settings_file.write_text(json.dumps(gams_settings(p, w), indent=1))
 
 cmd = [
     sys.executable, str(pathlib.Path(p.scriptsdir) / "pathway_step.py"),
-    "--from-inputs",
     "--model-dir", str(horizon),
     "--work", str(work),
     "--zones", ",".join(p.zones),
@@ -41,8 +40,6 @@ cmd = [
     "--tolerance", str(r.get("tolerance", 0.05)),
     "--max-iter", str(r.get("max_iter", 5)),
     "--jobs", str(r.get("jobs", 3)),
-    "--year", str(w.year),
-    "--esys", str(p.energy_system_scenario),
     "--gams", str(p.gamspath),
     "--code", str(p.sharedcodepath),
     "--gams-settings", str(settings_file),
