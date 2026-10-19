@@ -1,7 +1,7 @@
 """Solve one highRES run outside Snakemake, reusing an existing set of inputs.
 
 For the handful of special runs that must not disturb a finished sweep: a
-crossover re-solve, a per-zone shedding cap, or a few extra grid points. Going
+crossover re-solve or a few extra grid points. Going
 through Snakemake for these is risky, because cplex.opt and highres.gms are
 inputs to every run_gams job. Touching either makes every existing solve look
 stale, and a fresh checkout gives every file a new mtime, which cascades into
@@ -16,8 +16,6 @@ rule. On top of that call it can:
                       option file is the modelpath cplex.opt with the
                       overrides applied, written into the run directory and
                       passed via optDir, so the shared cplex.opt is untouched.
-  --cap-zones Z,...   cap var_shed in those zones (needs the shed_cap block
-                      in highres.gms, on epsilon_ll since 2026-10-19)
   --label NAME        prefix the run directory, NAME_e{eps}_d{delta}. A label
                       keeps the run out of the "e*_d*" glob that builds the
                       runs table, so special runs cannot be pooled into the
@@ -34,11 +32,6 @@ Examples, from the WF checkout:
   # grid-gap point on the diagonal, joins the sweep
   python workflow/scripts/solve_one.py --config config/config_fox_1year_fine.yaml \\
       --epsilon 0.0005 --delta 0.0005 --sbatch
-
-  # no shedding allowed in the four heaviest relative shedders
-  python workflow/scripts/solve_one.py --config config/config_fox_1year_fine.yaml \\
-      --epsilon 0.005 --delta 0.2 --label capEESEIEFI \\
-      --cap-zones EE,SE,IE,FI --cap-frac 0 --sbatch
 
 --sbatch writes NAME/submit.sh into the run directory instead of solving, so
 the solve happens on a compute node. Submit it with sbatch.
@@ -62,8 +55,6 @@ def parse_args():
     ap.add_argument("--shed-mode", default=None,
                     help="override the config's shed_mode for this run")
     ap.add_argument("--cplex", action="append", default=[], metavar="KEY=VALUE")
-    ap.add_argument("--cap-zones", default=None, metavar="Z1,Z2,...")
-    ap.add_argument("--cap-frac", type=float, default=0.0)
     ap.add_argument("--gms", default=None, type=pathlib.Path,
                     help="highres.gms to solve with (default: the config's "
                          "abs_shared_code). Must be a checkout of epsilon_ll: "
@@ -110,8 +101,6 @@ def main():
     if "eq_shed_depth" not in gms.read_text():
         sys.exit(f"{gms} has no shed formulation -- is it the pathways branch? "
                  "Point --gms at a checkout of epsilon_ll.")
-    if a.cap_zones and "shed_cap_zones" not in gms.read_text():
-        sys.exit(f"{gms} predates the shed_cap block; update its epsilon_ll checkout")
 
     modelpath = (wf / pathlib.Path(paths["results"]) / f"{psys}_{year}_{spatial}").resolve()
     if not (modelpath / "inputs.finished").exists():
@@ -180,9 +169,6 @@ def main():
         "--shed_mode=" + shed_mode,
         "--shed_scope=" + shed_scope,
     ]
-
-    if a.cap_zones:
-        args += ["--shed_cap_zones=" + a.cap_zones, "--shed_cap_frac=" + str(a.cap_frac)]
 
     if a.cplex:
         # This run's own option file: the shared cplex.opt, overrides applied.
