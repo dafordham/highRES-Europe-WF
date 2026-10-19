@@ -172,19 +172,36 @@ class Runner:
                 self.run_local(d, extra)
             wall = time.time() - t0
 
+        # The job converts results.gdx itself, but that can fail on its own:
+        # on fox a 4-hour expansion lost its results.db to a passing disk I/O
+        # error (2026-10-16). Redo just the conversion rather than the solve.
+        if (d / "results.gdx").is_file() and not (d / "results.db").is_file():
+            say(f"    {label}: results.gdx without results.db, converting it here")
+            self.convert(d)
+
         rec = {"key": key, "wall_s": wall, "scalars": scalars(d / "results.db"),
                "has_results": (d / "results.db").is_file()}
-        done.write_text(json.dumps(rec, indent=2))
+        # No results, no record: a rerun then retries instead of trusting it.
+        if rec["has_results"]:
+            done.write_text(json.dumps(rec, indent=2))
         return rec, adopted
+
+    def convert(self, d):
+        """results.gdx to results.db, moved into place only when complete."""
+        r = subprocess.run([f"{self.args.gams}/gamstool", "sqlitewrite",
+                            "gdxIn=results.gdx", "o=results.db.tmp"],
+                           cwd=d, capture_output=True, text=True)
+        if r.returncode == 0:
+            (d / "results.db.tmp").rename(d / "results.db")
+        else:
+            say(f"    conversion failed in {d}: {r.stderr.strip()[-300:]}")
 
     def run_local(self, d, extra):
         with open(d / "solve.log", "w") as log:
             subprocess.run(self.gams_cmd(extra), cwd=d, stdout=log,
                            stderr=subprocess.STDOUT)
         if (d / "results.gdx").is_file():
-            subprocess.run([f"{self.args.gams}/gamstool", "sqlitewrite",
-                            "gdxIn=results.gdx", "o=results.db"],
-                           cwd=d, capture_output=True)
+            self.convert(d)
 
     def run_slurm(self, d, extra, kind, key, label):
         """Submit one solve and wait for it.
@@ -239,7 +256,7 @@ class Runner:
             say(f"    {label}: job {rec['job']} from an earlier run is still queued, waiting")
             while job_alive(rec["job"]):
                 time.sleep(60)
-        if (d / "results.db").is_file():
+        if (d / "results.gdx").is_file():
             say(f"    {label}: using the result of job {rec['job']}")
             return True
         return False
