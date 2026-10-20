@@ -174,10 +174,6 @@ localrules:
     build_capacity_ledger,
     build_ev_inputs,
     build_inputs,
-    # pathways
-    # run_robust_loop only coordinates: with robust.submit = slurm it submits
-    # every GAMS solve as its own job, so it runs on the login node.
-    run_robust_loop,
     # run_gams is deliberately NOT listed here. As a local rule it executes in
     # the Snakemake process itself, which on fox means the solve runs on the
     # login node. Leave it out so --executor slurm submits it as a job.
@@ -477,7 +473,8 @@ rule build_vre_areas_file:
             if windoff_floating
             else []
         ),
-        data2dd=pathlib.Path(workflow.basedir) / "scripts",
+        # pathways: ancient, so editing or pulling the scripts does not rebuild every milestone
+        data2dd=ancient(pathlib.Path(workflow.basedir) / "scripts"),
         technoeconomic_database="resources/highres_technoeconomic_database.ods",
     output:
         sharedpath / "vre_areas_{year}_.dd",
@@ -612,7 +609,8 @@ rule build_ev_inputs:
         "resources/ev_data/EV_driving_demand_kWh.csv",
         "resources/ev_data/EV_charging_demand_to_EV_kWh.csv",
         ev_scenarios="resources/ev_data/ev_scenarios.csv",
-        data2dd=pathlib.Path(workflow.basedir) / "scripts",
+        # pathways: ancient, so editing or pulling the scripts does not rebuild every milestone
+        data2dd=ancient(pathlib.Path(workflow.basedir) / "scripts"),
     output:
         horizonpath / "ev_data.dd",
     params:
@@ -763,11 +761,15 @@ rule run_robust_loop:
         horizonpath=lambda wildcards, output: str(pathlib.Path(output.modelresults).parent),
         robust=robust,
         zones=aggregated_regions,
-        # CPUs per solve job. Equal to the CPLEX threads by construction.
-        threads=config["cplex_options"]["threads"],
         scriptsdir=pathlib.Path(workflow.basedir) / "scripts",
+    # One job for the whole milestone. A rank runs one dispatch per
+    # realisation at the same time, so cores = realisations x CPLEX threads.
+    threads: robust.get("cores", 1)
+    resources:
+        mem_mb=robust.get("mem_mb", 8000),
+        runtime=robust.get("runtime", "24h"),
     log:
-        str(horizonpath) + "/robust/loop.log",
+        str(horizonpath) + "/robust.log",
     output:
         modelresults=protected(horizonpath / "results.gdx"),
     script:
@@ -791,7 +793,8 @@ rule build_capacity_ledger:
         zones="resources/zones.csv",
         results_gdx=rules.run_gams.output.modelresults,
         prior_ledger=resolve_prior_ledger,
-        data2dd=pathlib.Path(workflow.basedir) / "scripts",
+        # pathways: ancient, so editing or pulling the scripts does not rebuild every milestone
+        data2dd=ancient(pathlib.Path(workflow.basedir) / "scripts"),
         gen_database="resources/gen_database.csv",
     output:
         ledger=horizonpath / "capacity_ledger.csv",

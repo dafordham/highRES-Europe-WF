@@ -6,10 +6,8 @@ the milestone's fleet against every realisation, expand on the worst, repeat
 until all clear. The final results.gdx goes where run_gams would have put it,
 so the ledger rule and everything after it are unchanged.
 
-The rule is local. With robust.submit = slurm this process only coordinates,
-on the login node, and every GAMS solve is its own SLURM job. Snakemake does
-not see those jobs, so follow a milestone in robust/loop.log (this rule's log)
-or with squeue, where the jobs are named rob_<iteration>_<realisation>.
+The rule is one SLURM job per milestone, and every solve of the milestone
+runs inside it. Follow it in <milestone>/robust.log, this rule's log.
 """
 
 import json
@@ -39,19 +37,10 @@ cmd = [
     "--vre-parquet", str(snakemake.input.vre_parquet),
     "--tolerance", str(r.get("tolerance", 0.05)),
     "--max-iter", str(r.get("max_iter", 5)),
-    "--jobs", str(r.get("jobs", 3)),
     "--gams", str(p.gamspath),
     "--code", str(p.sharedcodepath),
     "--gams-settings", str(settings_file),
     "--results-to", str(snakemake.output.modelresults),
-    "--submit", r.get("submit", "local"),
-    "--account", str(r.get("account", "ec85")),
-    "--partition", str(r.get("partition", "")),
-    "--cpus", str(p.threads),
-    "--mem-dispatch", str(r.get("mem_dispatch", "64G")),
-    "--mem-expansion", str(r.get("mem_expansion", "80G")),
-    "--time-dispatch", str(r.get("time_dispatch", "12:00:00")),
-    "--time-expansion", str(r.get("time_expansion", "12:00:00")),
 ]
 
 with open(snakemake.log[0], "a") as log:
@@ -67,5 +56,5 @@ with open(snakemake.log[0], "a") as log:
 if returncode != 0:
     raise RuntimeError(
         f"the robust loop stopped with code {returncode}. The reason is at the "
-        f"end of {snakemake.log[0]}. Rerunning the same command resumes it."
+        f"end of {snakemake.log[0]}. Rerunning starts the milestone again."
     )

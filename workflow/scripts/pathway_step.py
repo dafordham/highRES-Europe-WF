@@ -1,10 +1,12 @@
 """One pathway milestone through the robust loop.
 
-Climate-Robust Pathways. Run by the run_robust_loop rule, once per milestone:
+Climate-Robust Pathways. Run by the run_robust_loop rule, once per milestone,
+inside that rule's one SLURM job:
 
   1. The starting fleet: the milestone's inputs, existing capacity after
      retirement plus plant under construction (fleet_from_inputs in GAMS).
-  2. Rank: dispatch the fleet against every realisation, minimising ENS.
+  2. Rank: dispatch the fleet against every realisation, minimising ENS. The
+     dispatches run at the same time.
   3. If every realisation's ENS share is within the tolerance, stop.
   4. Otherwise a least-cost expansion on the worst realisation, new capacity
      floored at what earlier expansions built, and back to 2.
@@ -13,9 +15,8 @@ Results are only used from optimal solves. One exception: a dispatch at status
 7 (feasible, not proven optimal) whose ENS share is within the tolerance. Its
 ENS is an upper bound on the minimum, so the realisation provably clears.
 
-With --submit slurm every GAMS solve is its own SLURM job. Each finished solve
-leaves a done.json, so rerunning the same command after a crash reuses what is
-done and waits for jobs still in the queue rather than submitting them again.
+Every run starts the milestone from scratch: the work directory is emptied
+first. If the job dies, rerunning it redoes the milestone.
 
 Usage:
     python3 pathway_step.py --model-dir <milestone dir> --work <output dir> \
@@ -24,9 +25,7 @@ Usage:
 
 import argparse
 import csv
-import hashlib
 import json
-import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -45,12 +44,11 @@ GAMS_DEFAULT = "/Library/Frameworks/GAMS.framework/Versions/53/Resources"
 OK_MODELSTAT = {1, 2, 8}
 FEASIBLE_MODELSTAT = 7
 
-# Files written by a solve, or by later workflow steps (the ledger). Never
-# copied into a new solve directory, and left out of the inputs fingerprint.
+# Files in a milestone directory that are not model inputs: what a solve
+# writes, the loop's log, the ledger. Never copied into a solve directory.
 RESULT_FILES = ("results.gdx", "results.db", "results.db.tmp",
                 "results.db.compressed", "highres.lst", "highres.log",
-                "solve.log", "done.json", "job.txt", "job.sh", "slurm.out",
-                "capacity_ledger.csv", "realisation.json")
+                "solve.log", "robust.log", "capacity_ledger.csv")
 
 # GAMS settings for a run outside the workflow. The rule passes its own.
 SOLVE_ARGS = [
@@ -83,25 +81,6 @@ def script(name, *args):
         sys.exit(f"{name} failed:\n{r.stdout.decode()}\n{r.stderr.decode()}")
 
 
-def sha(*parts):
-    h = hashlib.sha256()
-    for p in parts:
-        h.update(p if isinstance(p, bytes) else str(p).encode())
-        h.update(b"\0")
-    return h.hexdigest()[:16]
-
-
-def inputs_key(d):
-    """Fingerprint of a directory's inputs: names, sizes, modification times.
-    Rebuilt inputs change it, so a resumed loop never reuses a stale solve."""
-    parts = []
-    for f in sorted(Path(d).iterdir()):
-        if f.is_file() and f.name not in RESULT_FILES:
-            st = f.stat()
-            parts += [f.name, st.st_size, int(st.st_mtime)]
-    return sha(*parts)
-
-
 def setting(settings, name, default):
     """The value of one --name=value GAMS setting."""
     for s in settings:
@@ -128,144 +107,19 @@ def query(db, sql):
         con.close()
 
 
-def scalars(db):
-    """0-dimensional symbols. gamstool puts them in a table called scalars."""
-    if not db.is_file():
-        return {}
+def solve(d, extra, settings, args):
+    """One GAMS solve in directory d, then results.gdx to results.db.
+    Returns the solve's scalars and its wall time."""
+    t0 = time.time()
+    cmd = [f"{args.gams}/gams", f"{args.code}/highres.gms", *settings, *extra, "lo=2"]
+    with open(d / "solve.log", "w") as log:
+        subprocess.run(cmd, cwd=d, stdout=log, stderr=subprocess.STDOUT)
+    if (d / "results.gdx").is_file():
+        subprocess.run([f"{args.gams}/gamstool", "sqlitewrite",
+                        "gdxIn=results.gdx", "o=results.db"], cwd=d, capture_output=True)
     names = ",".join(f"'{n}'" for n in SCALARS)
-    return dict(query(db, f"select name, value from scalars where name in ({names})"))
-
-
-class Runner:
-    """Runs GAMS solves, here or as SLURM jobs, and remembers finished ones."""
-
-    def __init__(self, args, settings):
-        self.args = args
-        self.settings = settings
-
-    def gams_cmd(self, extra):
-        a = self.args
-        return [f"{a.gams}/gams", f"{a.code}/highres.gms", *self.settings, *extra, "lo=2"]
-
-    def run(self, d, extra, kind, key, label):
-        """One solve in directory d. Returns its record and whether it was reused.
-
-        kind (dispatch, expansion, start) sets the job's size. key says what the
-        solve was run with, so a done.json with the same key is its result.
-        """
-        done = d / "done.json"
-        if done.is_file():
-            rec = json.loads(done.read_text())
-            if rec["key"] == key:
-                return rec, True
-
-        # A job an earlier run submitted counts as reused: not solved now.
-        adopted = self.args.submit == "slurm" and self.adopt_queued(d, key, label)
-        wall = None
-        if not adopted:
-            for f in RESULT_FILES:
-                (d / f).unlink(missing_ok=True)
-            t0 = time.time()
-            if self.args.submit == "slurm":
-                self.run_slurm(d, extra, kind, key, label)
-            else:
-                self.run_local(d, extra)
-            wall = time.time() - t0
-
-        # The job converts results.gdx itself, but that can fail on its own:
-        # on fox a 4-hour expansion lost its results.db to a passing disk I/O
-        # error (2026-10-16). Redo just the conversion rather than the solve.
-        if (d / "results.gdx").is_file() and not (d / "results.db").is_file():
-            say(f"    {label}: results.gdx without results.db, converting it here")
-            self.convert(d)
-
-        rec = {"key": key, "wall_s": wall, "scalars": scalars(d / "results.db"),
-               "has_results": (d / "results.db").is_file()}
-        # No results, no record: a rerun then retries instead of trusting it.
-        if rec["has_results"]:
-            done.write_text(json.dumps(rec, indent=2))
-        return rec, adopted
-
-    def convert(self, d):
-        """results.gdx to results.db, moved into place only when complete."""
-        r = subprocess.run([f"{self.args.gams}/gamstool", "sqlitewrite",
-                            "gdxIn=results.gdx", "o=results.db.tmp"],
-                           cwd=d, capture_output=True, text=True)
-        if r.returncode == 0:
-            (d / "results.db.tmp").rename(d / "results.db")
-        else:
-            say(f"    conversion failed in {d}: {r.stderr.strip()[-300:]}")
-
-    def run_local(self, d, extra):
-        with open(d / "solve.log", "w") as log:
-            subprocess.run(self.gams_cmd(extra), cwd=d, stdout=log,
-                           stderr=subprocess.STDOUT)
-        if (d / "results.gdx").is_file():
-            self.convert(d)
-
-    def run_slurm(self, d, extra, kind, key, label):
-        """Submit one solve and wait for it.
-
-        The job converts results.gdx to results.db itself, so the login node
-        only reads a few numbers. The database is moved into place when
-        complete, so a job killed while writing it leaves nothing to trust.
-        """
-        a = self.args
-        gams_line = " ".join(shlex.quote(str(x)) for x in self.gams_cmd(extra))
-        tool = shlex.quote(f"{a.gams}/gamstool")
-        (d / "job.sh").write_text(
-            "#!/bin/bash\n"
-            f"cd {shlex.quote(str(d))}\n"
-            f"{gams_line} > solve.log 2>&1\n"
-            "rc=$?\n"
-            "if [ -f results.gdx ]; then\n"
-            f"  {tool} sqlitewrite gdxIn=results.gdx o=results.db.tmp > /dev/null"
-            " && mv results.db.tmp results.db\n"
-            "fi\n"
-            "exit $rc\n"
-        )
-        mem, limit, cpus = {
-            "dispatch": (a.mem_dispatch, a.time_dispatch, a.cpus),
-            "expansion": (a.mem_expansion, a.time_expansion, a.cpus),
-            "start": ("16G", "01:00:00", 1),
-        }[kind]
-        cmd = ["sbatch", "--wait", "--parsable", f"--account={a.account}",
-               f"--time={limit}", f"--mem={mem}", f"--cpus-per-task={cpus}",
-               "--ntasks=1", f"--job-name={label}", f"--output={d / 'slurm.out'}"]
-        if a.partition:
-            cmd.append(f"--partition={a.partition}")
-        cmd.append(str(d / "job.sh"))
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        job = p.stdout.readline().strip().split(";")[0]
-        (d / "job.txt").write_text(json.dumps({"job": job, "key": key}))
-        say(f"    submitted {label} as job {job}")
-        _, err = p.communicate()
-        if p.returncode != 0:
-            say(f"    job {job} ({label}) ended with code {p.returncode}. {err.strip()[-300:]}")
-
-    def adopt_queued(self, d, key, label):
-        """Use a job an earlier run of the loop submitted, rather than resubmit:
-        wait for it if it is still queued, then take its results if it left any."""
-        jf = d / "job.txt"
-        if not jf.is_file():
-            return False
-        rec = json.loads(jf.read_text())
-        if rec["key"] != key:
-            return False
-        if job_alive(rec["job"]):
-            say(f"    {label}: job {rec['job']} from an earlier run is still queued, waiting")
-            while job_alive(rec["job"]):
-                time.sleep(60)
-        if (d / "results.gdx").is_file():
-            say(f"    {label}: using the result of job {rec['job']}")
-            return True
-        return False
-
-
-def job_alive(job):
-    r = subprocess.run(["squeue", "-h", "-j", str(job), "-o", "%T"],
-                       capture_output=True, text=True)
-    return bool(r.stdout.strip())
+    s = dict(query(d / "results.db", f"select name, value from scalars where name in ({names})"))
+    return s, time.time() - t0
 
 
 def judge(s, what, path, tolerance=None):
@@ -273,8 +127,7 @@ def judge(s, what, path, tolerance=None):
     tolerance, expansions none, so an expansion must be optimal."""
     stat = s.get("o_modelstat")
     if stat is None:
-        sys.exit(f"{what}: no model status in the results. Look at "
-                 f"{path / 'solve.log'} and, on fox, {path / 'slurm.out'}")
+        sys.exit(f"{what}: no model status in the results. Look at {path / 'highres.log'}")
     stat, share = int(stat), s.get("o_ens_share")
     if stat in OK_MODELSTAT:
         return "optimal"
@@ -294,29 +147,22 @@ def judge(s, what, path, tolerance=None):
 
 
 def build_realisations(path, source, work, zones, settings, gams, vre_parquet):
-    """One input directory per realisation in the yaml file. Rebuilt only when
-    the entry or the inputs change: at full year a rescale takes minutes."""
+    """One input directory per realisation in the yaml file."""
     entries = yaml.safe_load(Path(path).read_text())
-    year = setting(settings, "weather_yr", "2010")
-    esys = setting(settings, "esys_scen", "BASE")
     out = {}
     for e in entries:
         d = work / "realisations" / e["name"]
-        key = sha(json.dumps(e, sort_keys=True), inputs_key(source), ",".join(zones), year, esys)
-        marker = d / "realisation.json"
-        if not (marker.is_file() and json.loads(marker.read_text())["key"] == key):
-            shutil.rmtree(d, ignore_errors=True)
-            args = ["--from", source, "--to", d, "--cf", e.get("cf", 1.0),
-                    "--demand", e.get("demand", 1.0), "--zones", ",".join(zones),
-                    "--year", year, "--esys", esys, "--gams", gams]
-            if vre_parquet:
-                args += ["--vre-parquet", vre_parquet]
-            for flag, k in (("--cf-tech", "cf_tech"), ("--demand-zone", "demand_zone")):
-                if e.get(k):
-                    args += [flag, ",".join(f"{a}={b}" for a, b in e[k].items())]
-            script("make_realisation.py", *args)
-            marker.write_text(json.dumps({"key": key, "entry": e}, indent=2))
-        out[e["name"]] = {"dir": d, "key": key}
+        args = ["--from", source, "--to", d, "--cf", e.get("cf", 1.0),
+                "--demand", e.get("demand", 1.0), "--zones", ",".join(zones),
+                "--year", setting(settings, "weather_yr", "2010"),
+                "--esys", setting(settings, "esys_scen", "BASE"), "--gams", gams]
+        if vre_parquet:
+            args += ["--vre-parquet", vre_parquet]
+        for flag, k in (("--cf-tech", "cf_tech"), ("--demand-zone", "demand_zone")):
+            if e.get(k):
+                args += [flag, ",".join(f"{a}={b}" for a, b in e[k].items())]
+        script("make_realisation.py", *args)
+        out[e["name"]] = d
     return out
 
 
@@ -334,59 +180,48 @@ def warn_vre_gaps(db):
                 f"{cells.get((z, g), 0.0):.4f} GW in its cells. {gap:.4f} GW left out.")
 
 
-def start_fleet(args, runner, work, zones):
+def start_fleet(args, settings, work, zones):
     """The fleet of the milestone's inputs, as a fleet .dd."""
     d = work / "start"
-    fleet_dd = work / "fleet_start.dd"
     copy_inputs(args.model_dir, d)
-    key = sha(inputs_key(args.model_dir), *runner.settings, "fleet_from_inputs")
-    rec, reused = runner.run(d, ["--fleet_from_inputs=ON"], "start", key, "rob_start")
-    if not rec["has_results"]:
-        sys.exit(f"fleet_from_inputs wrote no results. Look at {d / 'solve.log'}")
-    if not (reused and fleet_dd.is_file()):
-        warn_vre_gaps(d / "results.db")
-        script("caps2dd.py", "--from", d / "results.db", "--to", fleet_dd,
-               "--zones", ",".join(zones))
+    solve(d, ["--fleet_from_inputs=ON"], settings, args)
+    if not (d / "results.db").is_file():
+        sys.exit(f"fleet_from_inputs wrote no results. Look at {d / 'highres.log'}")
+    warn_vre_gaps(d / "results.db")
+    fleet_dd = work / "fleet_start.dd"
+    script("caps2dd.py", "--from", d / "results.db", "--to", fleet_dd,
+           "--zones", ",".join(zones))
     return fleet_dd
 
 
-def rank(realisations, fleet_dd, work, runner, iteration, tolerance):
-    """One fixed-fleet min-ENS dispatch per realisation, in parallel."""
-    fleet_key = sha(fleet_dd.read_bytes())
-
+def rank(realisations, fleet_dd, work, settings, args, iteration):
+    """One fixed-fleet min-ENS dispatch per realisation, all at the same time."""
     def one(item):
-        name, r = item
+        name, src = item
         d = work / f"iter{iteration}" / name
-        copy_inputs(r["dir"], d)
+        copy_inputs(src, d)
         shutil.copy2(fleet_dd, d / "fixed_caps.dd")
-        key = sha(fleet_key, r["key"], *runner.settings, "dispatch")
-        rec, reused = runner.run(d, ["--ens_obj=ON", "--fix_fleet=fixed_caps"],
-                                 "dispatch", key, f"rob_i{iteration}_{name}")
-        s = rec["scalars"]
-        proof = judge(s, f"iteration {iteration}, {name}", d, tolerance)
-        return name, {"dir": d, "key": r["key"], "wall": rec["wall_s"],
-                      "reused": reused, "share": s["o_ens_share"],
+        s, wall = solve(d, ["--ens_obj=ON", "--fix_fleet=fixed_caps"], settings, args)
+        proof = judge(s, f"iteration {iteration}, {name}", d, args.tolerance)
+        return name, {"dir": d, "src": src, "wall": wall, "share": s["o_ens_share"],
                       "ens": s["o_ens_total"], "modelstat": int(s["o_modelstat"]),
                       "proof": proof}
 
-    with ThreadPoolExecutor(max_workers=runner.args.jobs) as pool:
+    with ThreadPoolExecutor(max_workers=len(realisations)) as pool:
         return dict(pool.map(one, realisations.items()))
 
 
-def expand(worst, fleet_dd, work, runner, iteration, zones):
+def expand(worst, fleet_dd, work, settings, args, iteration, zones):
     """Least-cost expansion on the worst realisation, new capacity floored."""
     d = work / f"iter{iteration}" / "expansion"
-    copy_inputs(worst["dir"], d)
+    copy_inputs(worst["src"], d)
     shutil.copy2(fleet_dd, d / "fixed_caps.dd")
-    key = sha(fleet_dd.read_bytes(), worst["key"], *runner.settings, "expansion")
-    rec, reused = runner.run(d, ["--fleet_floor=fixed_caps"], "expansion", key,
-                             f"rob_i{iteration}_expand")
-    judge(rec["scalars"], f"iteration {iteration}, expansion", d)
+    s, wall = solve(d, ["--fleet_floor=fixed_caps"], settings, args)
+    judge(s, f"iteration {iteration}, expansion", d)
     new_dd = work / f"iter{iteration}" / "fleet_after.dd"
-    if not (reused and new_dd.is_file()):
-        script("caps2dd.py", "--from", d / "results.db", "--to", new_dd,
-               "--zones", ",".join(zones))
-    return d, new_dd, rec["wall_s"], reused
+    script("caps2dd.py", "--from", d / "results.db", "--to", new_dd,
+           "--zones", ",".join(zones))
+    return d, new_dd, wall
 
 
 def main():
@@ -394,44 +229,35 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model-dir", required=True, type=Path,
                     help="the milestone's built model directory")
-    ap.add_argument("--work", required=True, type=Path, help="output directory")
+    ap.add_argument("--work", required=True, type=Path,
+                    help="output directory, emptied at the start")
     ap.add_argument("--zones", required=True, help="comma separated")
     ap.add_argument("--realisations-file", required=True, help="yaml list")
     ap.add_argument("--tolerance", type=float, default=0.05,
                     help="ENS share of each realisation's own demand. 0.05 is a "
                          "placeholder, nowhere near a reliability standard")
     ap.add_argument("--max-iter", type=int, default=5)
-    ap.add_argument("--jobs", type=int, default=3, help="dispatches at once")
     ap.add_argument("--gams-settings",
                     help="json list of GAMS settings from the rule. Default SOLVE_ARGS")
     ap.add_argument("--vre-parquet", help="capacity factors, if not in --model-dir")
     ap.add_argument("--results-to", help="copy the final results.gdx here")
     ap.add_argument("--gams", default=GAMS_DEFAULT)
     ap.add_argument("--code", help="GAMS model directory")
-    ap.add_argument("--submit", choices=["local", "slurm"], default="local")
-    ap.add_argument("--account", default="ec85")
-    ap.add_argument("--partition", default="")
-    ap.add_argument("--cpus", type=int, default=30, help="per job, = threads in cplex.opt")
-    ap.add_argument("--mem-dispatch", default="64G")
-    ap.add_argument("--mem-expansion", default="80G")
-    ap.add_argument("--time-dispatch", default="12:00:00")
-    ap.add_argument("--time-expansion", default="12:00:00")
     args = ap.parse_args()
 
     args.code = args.code or str((HERE / ".." / ".." / "resources" / "highRES-Europe-GAMS").resolve())
-    args.work = args.work.resolve()
-    args.work.mkdir(parents=True, exist_ok=True)
     zones = [z.strip() for z in args.zones.split(",") if z.strip()]
+    # Read before the work directory is emptied: the rule writes it there.
     if args.gams_settings:
         settings = json.loads(Path(args.gams_settings).read_text())
     else:
         settings = [f"--codefolderpath={args.code}", *SOLVE_ARGS]
-    runner = Runner(args, settings)
-    work = args.work
+    work = args.work.resolve()
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir(parents=True)
 
-    say(f"milestone {args.model_dir}, {len(zones)} zones, solves {args.submit}, "
-        f"tolerance {args.tolerance:.1%}")
-    fleet_dd = start_fleet(args, runner, work, zones)
+    say(f"milestone {args.model_dir}, {len(zones)} zones, tolerance {args.tolerance:.1%}")
+    fleet_dd = start_fleet(args, settings, work, zones)
     realisations = build_realisations(args.realisations_file, args.model_dir, work,
                                       zones, settings, args.gams, args.vre_parquet)
     say(f"realisations: {', '.join(realisations)}\n")
@@ -444,7 +270,7 @@ def main():
 
     log, previous_worst, final_dir = [], None, None
     for iteration in range(1, args.max_iter + 1):
-        res = rank(realisations, fleet_dd, work, runner, iteration, args.tolerance)
+        res = rank(realisations, fleet_dd, work, settings, args, iteration)
         ranked = sorted(res.items(), key=lambda kv: kv[1]["share"], reverse=True)
 
         say(f"iteration {iteration}: rank")
@@ -452,13 +278,12 @@ def main():
             flag = "FAIL" if r["share"] > args.tolerance else "ok"
             if r["proof"] != "optimal":
                 flag += ", " + r["proof"]
-            wall = "reused" if r["reused"] else f"{r['wall']:.1f}s"
             say(f"  {name:<10} share {r['share']:>9.4%}  ENS {r['ens']:>12,.1f} GWh"
-                f"  {wall:>8}  [{flag}]")
+                f"  {r['wall']:>8.0f}s  [{flag}]")
             log.append({"iteration": iteration, "realisation": name,
                         "share": r["share"], "ens_gwh": r["ens"],
                         "modelstat": r["modelstat"], "proof": r["proof"],
-                        "wall_s": None if r["wall"] is None else round(r["wall"], 1)})
+                        "wall_s": round(r["wall"], 1)})
 
         worst_name, worst = ranked[0]
         if worst["share"] <= args.tolerance:
@@ -480,14 +305,9 @@ def main():
             break
 
         say(f"  expanding on {worst_name}")
-        final_dir, fleet_dd, wall, reused = expand(worst, fleet_dd, work, runner,
-                                                   iteration, zones)
-        say(f"  expansion {'reused' if reused else f'solved in {wall:.1f}s'}\n")
-        if args.submit == "slurm":
-            # Superseded by the expansion. done.json keeps what resuming needs.
-            for r in res.values():
-                for f in ("results.gdx", "results.db"):
-                    (r["dir"] / f).unlink(missing_ok=True)
+        final_dir, fleet_dd, wall = expand(worst, fleet_dd, work, settings, args,
+                                           iteration, zones)
+        say(f"  expansion solved in {wall:.0f}s\n")
 
     with open(work / "iterations.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(log[0].keys()))

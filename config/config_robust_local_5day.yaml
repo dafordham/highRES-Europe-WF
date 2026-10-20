@@ -36,14 +36,16 @@ robust:
   # reliability standard.
   tolerance: 0.05
   max_iter: 5
-  # Dispatches run at once. Locally, bound by memory.
-  jobs: 3
-  # local runs GAMS here. slurm submits every solve as its own job.
-  submit: local
+  # Cores for the loop: realisations x CPLEX threads. Locally Snakemake caps it
+  # at -c.
+  cores: 12
 
 parameters:
+  # developer keeps the shared input files their normal mode deletes as
+  # temporary. Otherwise a later milestone rebuilds them, and the newer files
+  # make every finished milestone rerun.
   mode: [
-    "normal",
+    "developer",
   ]
   # One weather year for every milestone, or one per milestone.
   years: [

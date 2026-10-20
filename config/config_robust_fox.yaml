@@ -1,4 +1,4 @@
-target: "results.db.compressed"
+target: "capacity_ledger.csv"
 
 # CLIMATE-ROBUST PATHWAYS, the whole pathway with the robust loop, on fox, full
 # year. In the format of Shahzad and Guillermo's pathway_planning Snakefile:
@@ -10,32 +10,27 @@ target: "results.db.compressed"
 #   screen -S robust
 #   snakemake --configfile config/config_robust_fox.yaml --rerun-incomplete \
 #     --executor slurm --default-resources slurm_account=ec85 runtime=12h \
-#     mem_mb_per_cpu=4000 --keep-going --latency-wait 30 -j 20 -c 30 \
-#     --rerun-triggers mtime
+#     --keep-going --latency-wait 30 -j 20 -c 30 --rerun-triggers mtime
 #
-# Without a target this runs every milestone. To stop after one, give its
-# results.db.compressed as the FIRST argument, as an absolute path (the
-# Snakefile builds absolute output paths, and --rerun-triggers would swallow
-# a target placed after it). --rerun-triggers mtime stops their changed
+# Every rule except the light local ones is a SLURM job, and each milestone's
+# robust loop is ONE job (rule run_robust_loop, sized in the robust block
+# below). Snakemake only waits here. Follow a milestone in
+# <milestone>/robust.log. If a job or Snakemake dies, rerun the same command:
+# finished milestones are kept, an unfinished one starts again.
+#
+# The target is each milestone's capacity ledger, so the analysis files
+# (results.db, parquet) are not built here: convert_results_db_parquet is a
+# local rule that declares 50 GB. To stop after one milestone, give its
+# capacity_ledger.csv as the FIRST argument, as an absolute path (the
+# Snakefile builds absolute output paths, and --rerun-triggers would swallow a
+# target placed after it). --rerun-triggers mtime stops their changed
 # build_vre_cf_grid notebook from forcing that rule to rerun.
 #
-# The input rules go to SLURM through the executor. run_robust_loop is a local
-# rule: it runs here, on the login node, and submits every GAMS solve as its
-# own job (robust.submit: slurm). Snakemake does not see those jobs. Follow a
-# milestone in <milestone>/robust/loop.log, or with squeue, where they are
-# named rob_<iteration>_<realisation>.
-#
-# A crash, a lost connection or a killed screen: rerun the same command. The
-# loop picks up where it stopped, and waits for jobs still in the queue rather
-# than submitting them again.
-#
 # Give runtime WITH a unit. A plain number is read as SECONDS: runtime=720
-# gave a 12-minute limit (fox, 2026-10-16). 12 h got benchmark jobs started
-# within an hour where 24 h waited days. It applies to the input rules here;
-# the loop's own jobs take their limits from the robust block below.
+# gave a 12-minute limit (fox, 2026-10-16). No mem_mb_per_cpu: it overrides
+# each rule's own mem_mb (22 CPUs x 4000 gave a 50 GB rule 88 GB).
 #
-# Check dusage -p ec85 before launching. Each milestone keeps about 1.5 GB per
-# expansion and per final dispatch, plus a few GB while solving.
+# Check dusage -p ec85 before launching. A full-year milestone left about 4 GB.
 #
 # Needs two files that are not in git and come from them:
 # resources/gen_database.csv and resources/europe_demand_<esys>_<horizon>.csv,
@@ -65,21 +60,21 @@ robust:
   # reliability standard.
   tolerance: 0.05
   max_iter: 5
-  # Dispatches submitted at once
-  jobs: 3
-  # local runs GAMS here. slurm submits every solve as its own job.
-  submit: slurm
-  account: ec85
-  # Measured on fox 2026-10-15, full year, 28 zones, 30 threads: dispatch
-  # 1.5 to 2.7 h at about 45 GB, expansion 3.6 h at 63 GB.
-  mem_dispatch: 64G
-  mem_expansion: 80G
-  time_dispatch: "12:00:00"
-  time_expansion: "12:00:00"
+  # The milestone's one job. A rank runs the 3 dispatches at once, 30 CPLEX
+  # threads each, so 90 cores. Measured at full year (fox, 2026-10-19): a
+  # dispatch 50 GB, an expansion 68 GB, so 3 x 50 plus margin. An expansion
+  # takes about 4 h and a rank about 1.5 h: 7 h with one expansion, 12 h with
+  # two.
+  cores: 90
+  mem_mb: 180000
+  runtime: "24h"
 
 parameters:
+  # developer keeps the shared input files their normal mode deletes as
+  # temporary. Otherwise a later milestone rebuilds them, and the newer files
+  # make every finished milestone rerun.
   mode: [
-    "normal",
+    "developer",
   ]
   # One weather year for every milestone, or one per milestone.
   years: [
