@@ -10,7 +10,10 @@ target: "capacity_ledger.csv"
 #   screen -S robust
 #   snakemake --configfile config/config_robust_fox.yaml --rerun-incomplete \
 #     --executor slurm --default-resources slurm_account=ec85 runtime=12h \
-#     --keep-going --latency-wait 30 -j 20 -c 30 --rerun-triggers mtime
+#     --keep-going --latency-wait 30 -j 20 -c 90 --rerun-triggers mtime
+#
+# -c 90 because Snakemake caps every rule's threads at -c: with -c 30 the
+# milestone job would get 30 cores instead of the 90 below.
 #
 # Every rule except the light local ones is a SLURM job, and each milestone's
 # robust loop is ONE job (rule run_robust_loop, sized in the robust block
