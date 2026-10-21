@@ -39,12 +39,38 @@ sbatch $A --job-name=exp10  --cpus-per-task=10 --mem=90G  --time=16:00:00 --outp
 
 About 900 core-hours in all, and about 2 GB of results.
 
+## Stage 2: CPLEX options
+
+On stress_PL's second-rank dispatch, alone, at 10 threads (Shahzad's own set
+at 6). `barepcomp` is fixed at the looser 1e-6, and `predual` × `BarOrder`
+are fully crossed. `now` is today's settings, as the reference. `CPLEX_OPTS`
+sets lines in the copy's `cplex.opt`, keys spelled as in that file; `sbatch`
+passes it on to the job with the rest of the environment. Run in the
+same shell as the block above (it uses `$S`, `$R`, `$O`).
+
+```bash
+D=$S/iter2/stress_PL
+X="--account=ec85 --ntasks=1 --mem=60G --time=08:00:00"
+sbatch $X --cpus-per-task=10 --job-name=opt_now      --output=$O/opt_now.out      $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6" sbatch $X --cpus-per-task=10 --job-name=opt_p1_auto  --output=$O/opt_p1_auto.out  $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 BarOrder=1" sbatch $X --cpus-per-task=10 --job-name=opt_p1_o1    --output=$O/opt_p1_o1.out    $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 BarOrder=2" sbatch $X --cpus-per-task=10 --job-name=opt_p1_o2    --output=$O/opt_p1_o2.out    $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 BarOrder=3" sbatch $X --cpus-per-task=10 --job-name=opt_p1_o3    --output=$O/opt_p1_o3.out    $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 predual=-1" sbatch $X --cpus-per-task=10 --job-name=opt_pm1_auto --output=$O/opt_pm1_auto.out $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 predual=-1 BarOrder=1" sbatch $X --cpus-per-task=10 --job-name=opt_pm1_o1   --output=$O/opt_pm1_o1.out   $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 predual=-1 BarOrder=2" sbatch $X --cpus-per-task=10 --job-name=opt_pm1_o2   --output=$O/opt_pm1_o2.out   $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 predual=-1 BarOrder=3" sbatch $X --cpus-per-task=10 --job-name=opt_pm1_o3   --output=$O/opt_pm1_o3.out   $R 10 $D
+CPLEX_OPTS="barepcomp=1e-6 predual=-1 BarOrder=3" sbatch $X --cpus-per-task=6  --job-name=opt_shahzad  --output=$O/opt_shahzad.out  $R 6 $D
+```
+
+About 145 core-hours. A setting counts only if it keeps the original's model
+status and ENS.
+
 ## Collect
 
 ```bash
 column -t $O/results.tsv
-sacct -u $USER -S <submission date> --name=exp90,exp60,exp10,rank20,rank10,rank6 \
-  --format=JobName,State,Start,Elapsed,MaxRSS | grep -v "\.ex"
+sacct -u $USER -S 2026-10-21 --format=JobName%14,State,Start,Elapsed,MaxRSS | grep -v "\.ex"
 ```
 
 Check first that every re-solve has the model status and objective of its

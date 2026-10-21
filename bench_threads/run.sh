@@ -28,6 +28,17 @@ solve() {
     esac
   done
   sed -i.bak "s/^threads .*/threads $THREADS/" "$d/cplex.opt" && rm -f "$d/cplex.opt.bak"
+  # Other CPLEX settings to test, as CPLEX_OPTS="key=value key=value", with
+  # the keys spelled as in cplex.opt (e.g. barepcomp, BarOrder, predual).
+  # Each replaces its line, or is added if the file has none.
+  for kv in ${CPLEX_OPTS:-}; do
+    k=${kv%%=*}; v=${kv#*=}
+    if grep -q "^$k " "$d/cplex.opt"; then
+      sed -i.bak "s/^$k .*/$k $v/" "$d/cplex.opt" && rm -f "$d/cplex.opt.bak"
+    else
+      echo "$k $v" >> "$d/cplex.opt"
+    fi
+  done
 
   # The original's settings, from the block GAMS writes at the top of its log
   local sysdir input args
