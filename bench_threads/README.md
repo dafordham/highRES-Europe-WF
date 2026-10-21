@@ -32,15 +32,18 @@ sbatch $A --job-name=exp90  --cpus-per-task=90 --mem=90G  --time=06:00:00 --outp
 sbatch $A --job-name=exp60  --cpus-per-task=60 --mem=90G  --time=06:00:00 --output=$O/exp60.out  $R 60 $S/iter1/expansion
 sbatch $A --job-name=rank20 --cpus-per-task=60 --mem=170G --time=06:00:00 --output=$O/rank20.out $R 20 $S/iter2/median $S/iter2/stress_AT $S/iter2/stress_PL
 sbatch $A --job-name=rank10 --cpus-per-task=30 --mem=170G --time=08:00:00 --output=$O/rank10.out $R 10 $S/iter2/median $S/iter2/stress_AT $S/iter2/stress_PL
+# added 2026-10-21, towards the 6 threads Shahzad uses
+sbatch $A --job-name=rank6  --cpus-per-task=18 --mem=170G --time=10:00:00 --output=$O/rank6.out  $R 6  $S/iter2/median $S/iter2/stress_AT $S/iter2/stress_PL
+sbatch $A --job-name=exp10  --cpus-per-task=10 --mem=90G  --time=16:00:00 --output=$O/exp10.out  $R 10 $S/iter1/expansion
 ```
 
-About 700 core-hours in all, and about 2 GB of results.
+About 900 core-hours in all, and about 2 GB of results.
 
 ## Collect
 
 ```bash
 column -t $O/results.tsv
-sacct -u $USER -S <submission date> --name=exp90,exp60,rank20,rank10 \
+sacct -u $USER -S <submission date> --name=exp90,exp60,exp10,rank20,rank10,rank6 \
   --format=JobName,State,Start,Elapsed,MaxRSS | grep -v "\.ex"
 ```
 
@@ -57,6 +60,7 @@ Per milestone with one expansion (rank, expansion, rank):
 | A | 90 | 3 × 30 | 90 threads |
 | B | 60 | 3 × 20 | 60 threads |
 | C | 30 | 3 × 10 | 30 threads |
+| D | 18 | 3 × 6 | 10 threads |
 
 Pick the option with the fewest core-hours whose milestone stays under 10 h,
 so two expansions fit in a 24 h job. Memory request: the measured peak plus
