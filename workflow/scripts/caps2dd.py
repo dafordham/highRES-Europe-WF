@@ -1,15 +1,14 @@
-"""Extract a solved fleet from a highRES results.db and write it as a .dd file.
+"""[cl] reads a solved fleet out of results.db and writes it as a .dd
 
-Climate-Robust Pathways. The pathway loop carries a fleet from one step to the
-next and re-dispatches it against many climate realisations, so a solved system
-has to become an input. This reads the capacity variables out of a solved run
-and emits the parameters that the fix_fleet block in highres.gms expects.
+the loop uses it to turn a solve into the fleet for the next solve: the
+starting fleet (fleet_from_inputs), and the fleet after each expansion.
+the .dd has the par_fix_* parameters that fix_fleet and fleet_floor read in
+highres.gms, plus the fleet_zones set.
 
-Reads results.db rather than results.gdx: the workflow already produces it via
-`gamstool sqlitewrite`.
+reads results.db (not results.gdx) since the solve already converts to it
 
 Usage:
-    python3 caps2dd.py --from <results.db> --to <fixed_caps.dd>
+    python3 caps2dd.py --from <results.db> --to <fixed_caps.dd> [--zones AT,CZ]
 """
 
 import argparse
@@ -23,27 +22,20 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from data2dd_funcs import wrapdd  # noqa: E402
 
-# Matches the rest of the workflow
+# [cl] same rounding as the rest of the workflow
 ROUNDDP = 8
 
-# Capacities below this are not assets, they are solver dust: a barrier solve
-# leaves entries at 1e-8 GW (ten watts), and a fleet spanning 1e-8 to 1e5
-# cannot be solved reliably when every one of those is a fixed bound. Applied
-# PER ASSET, never per entry -- see floor_fleet.
+# [cl] anything under 0.1 MW is solver dust, not a real asset. the barrier
+# leaves values like 1e-8 GW, and fixing a fleet from 1e-8 to 1e5 GW makes the
+# solve unstable. applied per asset, see floor_fleet.
+# same limit for negatives: under it they're dust, over it something is wrong
 MIN_CAPACITY_GW = 1e-4
 
-# Dust is judged against the capacity floor and nothing else. A separate, much
-# tighter threshold for negatives was wrong: it called -1e-6 GWh -- one
-# thousandth of a MWh of H2 tank capacity -- a real negative and refused to
-# write the file. Below the floor is dust whatever its sign; a negative BIGGER
-# than the floor is a genuine problem, since these variables are declared
-# positive.
-
-# Columns every gamstool sqlitewrite variable table carries. Anything else is
-# a set dimension.
+# [cl] value columns in every variable table from gamstool sqlitewrite,
+# the other columns are the sets (zone, tech, ...)
 VALUE_COLS = {"level", "marginal", "lower", "upper", "scale"}
 
-# results.db table -> parameter name declared in the fix_fleet block.
+# [cl] table in results.db -> parameter name in the fix_fleet block
 FLEET = {
     "var_new_pcap_z": "par_fix_new_pcap_z",
     "var_exist_pcap_z": "par_fix_exist_pcap_z",
@@ -60,26 +52,21 @@ FLEET = {
 }
 
 def table_exists(con, name):
+    """[cl] is this table in the database"""
     q = "select 1 from sqlite_master where type='table' and name=?"
     return con.execute(q, (name,)).fetchone() is not None
 
 
 def fmt(v):
-    # Fixed-point, because GAMS is picky about numeric literals.
-    #
-    # Values are written EXACTLY as solved, deliberately. Truncating them onto a
-    # 1 kW grid was tried and broke eq_store_ecap_max: a fix_fleet dispatch pins
-    # power and energy, Li-ion-8 ties energy to 8 x power, and rounding the
-    # power down shaves eight times more off the right-hand side than off the
-    # left. Any adjustment to a capacity has to respect the asset's internal
-    # ratios, which is the same lesson as flooring per asset rather than per
-    # entry. The floor slack that keeps a lower bound under its upper bound
-    # lives in highres.gms instead, where it touches only the floors.
+    # [cl] fixed-point, GAMS doesn't like some number formats
+    # values are written exactly as solved. rounding them to 1 kW was tried and
+    # broke Li-ion-8 (energy = 8 x power, so rounding power down cuts the energy
+    # limit 8x more). floor_tol in highres.gms handles the floors instead
     return f"{v:.{ROUNDDP}f}"
 
 
 def read_table(con, table):
-    """Read one variable table into {dotted key: level}, or None if absent."""
+    """[cl] one variable table as {"AT.Solar": level, ...}, None if the table is missing"""
     if not table_exists(con, table):
         print(f"  {table:<26} MISSING - skipped", file=sys.stderr)
         return None
@@ -88,8 +75,8 @@ def read_table(con, table):
     dims = [c for c in df.columns if c not in VALUE_COLS]
     if not dims:
         raise ValueError(f"{table} has no set dimensions")
-    # A variable with no records at all (every level zero, no bound ever
-    # assigned) comes out of gamstool as a table of set columns only.
+    # [cl] a variable with no records (all zero) comes out with only the set
+    # columns
     if "level" not in df.columns:
         return {}
 
@@ -97,16 +84,9 @@ def read_table(con, table):
     df["level"] = df["level"].astype(float).round(ROUNDDP)
 
 
-    # Absent entries default to zero in GAMS, and the fix_fleet block assigns
-    # over the full domain, so a dropped zero is still fixed to zero. Dropping
-    # them keeps the file to the fleet that actually exists.
+    # [cl] drop zeros, GAMS treats missing entries as zero anyway and fix_fleet
+    # covers everything, so they still get fixed to zero
     df = df[df["level"] != 0.0]
-
-    # An all-zero table still gets a block, an empty one. Writing nothing would
-    # leave the parameter declared but unassigned in highres.gms, which is the
-    # same state a misspelled name produces. Emitting the empty block means a
-    # missing block only ever signals a real mismatch, so the model can keep
-    # GAMS's own check on rather than suppressing it.
     if df.empty:
         return {}
     keys = df[dims].astype(str).agg(".".join, axis=1)
@@ -114,13 +94,11 @@ def read_table(con, table):
 
 
 def block_for(values, parname):
-    """One .dd parameter block. Empty input still produces an empty block.
+    """[cl] one parameter block of the .dd
 
-    An all-zero table still gets a block, an empty one. Writing nothing would
-    leave the parameter declared but unassigned in highres.gms, which is the
-    same state a misspelled name produces. Emitting the empty block means a
-    missing block only ever signals a real mismatch, so the model can keep
-    GAMS's own check on rather than suppressing it.
+    an empty table still gets an (empty) block. if it got none, GAMS would see
+    the parameter declared but never assigned, same as a typo in its name, and
+    we want that check to only catch real mistakes
     """
     if not values:
         rows = np.empty((0, 2), dtype=object)
@@ -130,30 +108,25 @@ def block_for(values, parname):
 
 
 def floor_fleet(data, floor):
-    """Drop assets below the floor, keeping each asset's components together.
+    """[cl] remove dust: clamp small negatives to zero, drop assets under the floor
 
-    Storage power and energy are tied by eq_store_ecap_max -- Li-ion-8 is an
-    8 hour battery, so energy <= 8 x power. Dropping one component and keeping
-    the other makes that constraint infeasible, which is how a naive per-entry
-    floor fails: energy fixed at 1.03e-06 against power fixed at 0.
-
-    So the unit of decision is the asset (new or existing, zone, technology).
-    If its largest component is below the floor it does not exist and every
-    component goes; otherwise all of them stay, however small.
+    works per asset (new or existing, zone, tech), not per entry. storage power
+    and energy are linked (Li-ion-8: energy <= 8 x power), so dropping one and
+    keeping the other is infeasible. if an asset's biggest part is under the
+    floor all of it goes, otherwise all of it stays
+    returns how many entries were dropped and clamped
     """
-    # Which parameters describe the same asset, by the key they share.
+    # [cl] group entries by asset: storage and hydro have power and energy in
+    # separate parameters but the same key (zone.tech)
     groups = {}
     for par, values in data.items():
         for key, val in values.items():
-            # storage and hydro: zone.tech, with pcap and ecap in separate
-            # parameters. generation and transmission are single-component.
             vintage = "new" if "_new_" in par else "exist"
             groups.setdefault((vintage, key), []).append((par, key, val))
 
-    # Negatives first. Barrier solutions leave levels like -3e-08 on variables
-    # declared positive, and fix_fleet would pin a positive variable to a
-    # negative number: infeasible, surfacing as a conflict on an unrelated
-    # equation rather than as anything about dust.
+    # [cl] negatives first. the barrier leaves things like -3e-08 on positive
+    # variables, and fixing one to a negative value is infeasible (and the
+    # error shows up somewhere unrelated)
     clamped, bad = 0, []
     for par, values in data.items():
         for key, val in list(values.items()):
@@ -172,6 +145,7 @@ def floor_fleet(data, floor):
               "Check the solve."
         )
 
+    # [cl] then drop assets where every part is under the floor
     dropped = 0
     for (_vintage, _key), members in groups.items():
         if max(abs(v) for _p, _k, v in members) < floor:
@@ -216,6 +190,7 @@ def main():
     finally:
         con.close()
 
+    # [cl] remove the dust, then build one block per parameter
     dropped, clamped = floor_fleet(data, args.floor)
     if clamped:
         print(f"  {clamped} negative dust entries clamped to zero")
@@ -236,6 +211,7 @@ def main():
         "",
     ]
 
+    # [cl] write the header, the fleet_zones set, then the blocks
     zones = [z.strip() for z in args.zones.split(",") if z.strip()]
     with open(dst, "w") as f:
         f.write("\n".join(header))
