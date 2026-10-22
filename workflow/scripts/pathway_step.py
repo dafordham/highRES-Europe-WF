@@ -23,7 +23,6 @@ Usage:
 
 import argparse
 import csv
-import json
 import shutil
 import sqlite3
 import subprocess
@@ -242,7 +241,7 @@ def main():
                          "placeholder, nowhere near a reliability standard")
     ap.add_argument("--max-iter", type=int, default=5)
     ap.add_argument("--gams-settings",
-                    help="json list of GAMS settings from the rule. Default SOLVE_ARGS")
+                    help="text file, one GAMS setting per line, from the rule. Default SOLVE_ARGS")
     ap.add_argument("--vre-parquet", help="capacity factors, if not in --model-dir")
     ap.add_argument("--results-to", help="copy the final results.gdx here")
     ap.add_argument("--gams", default=GAMS_DEFAULT)
@@ -253,7 +252,7 @@ def main():
     zones = [z.strip() for z in args.zones.split(",") if z.strip()]
     # [cl] read this before emptying the work dir, the rule puts it there
     if args.gams_settings:
-        settings = json.loads(Path(args.gams_settings).read_text())
+        settings = Path(args.gams_settings).read_text().splitlines()
     else:
         settings = [f"--codefolderpath={args.code}", *SOLVE_ARGS]
     work = args.work.resolve()
@@ -316,21 +315,14 @@ def main():
                                            iteration, zones)
         say(f"  expansion solved in {wall:.0f}s\n")
 
-    # [cl] save every rank's results, and a summary of the run
+    # [cl] save every rank's results
     with open(work / "iterations.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(log[0].keys()))
         w.writeheader()
         w.writerows(log)
-    converged = final_dir is not None
-    (work / "step_summary.json").write_text(json.dumps(
-        {"model_dir": str(args.model_dir), "tolerance": args.tolerance,
-         "realisations": list(realisations), "iterations": iteration,
-         "converged": converged, "final_fleet_dd": str(fleet_dd),
-         "final_results": str(final_dir / "results.gdx") if converged else None},
-        indent=2))
 
     # [cl] hand the final results.gdx to the workflow (the ledger reads it)
-    if not converged:
+    if final_dir is None:
         sys.exit("not converged: nothing delivered, so the pathway stops here")
     if args.results_to:
         Path(args.results_to).parent.mkdir(parents=True, exist_ok=True)

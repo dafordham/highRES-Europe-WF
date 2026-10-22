@@ -1,4 +1,4 @@
-"""[cl] wrapper for the run_robust_loop rule, runs pathway_step.py on one milestone
+"""wrapper for the run_robust_loop rule, runs pathway_step.py on one milestone
 
 used instead of run_gams when robust.enabled is on in the config.
 writes the final results.gdx to the same place run_gams would, so the ledger
@@ -6,7 +6,6 @@ rule doesn't need to change.
 the whole milestone runs in one SLURM job, progress is in <milestone>/robust.log
 """
 
-import json
 import pathlib
 import subprocess
 import sys
@@ -21,9 +20,9 @@ horizon = pathlib.Path(p.horizonpath)
 work = horizon / "robust"
 work.mkdir(parents=True, exist_ok=True)
 
-# [cl] pathway_step.py reads the GAMS settings from this file
-settings_file = work / "gams_settings.json"
-settings_file.write_text(json.dumps(gams_settings(p, w), indent=1))
+# [cl] pathway_step.py reads the GAMS settings from this file, one per line
+settings_file = work / "gams_settings.txt"
+settings_file.write_text("\n".join(gams_settings(p, w)))
 
 cmd = [
     sys.executable, str(pathlib.Path(p.scriptsdir) / "pathway_step.py"),
