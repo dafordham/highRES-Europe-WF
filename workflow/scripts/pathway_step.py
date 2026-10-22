@@ -1,22 +1,20 @@
-"""One pathway milestone through the robust loop.
+"""[cl] runs one milestone of the pathway through the robust loop
 
-Climate-Robust Pathways. Run by the run_robust_loop rule, once per milestone,
-inside that rule's one SLURM job:
+called by the run_robust_loop rule, once per milestone, all in one SLURM job.
 
-  1. The starting fleet: the milestone's inputs, existing capacity after
-     retirement plus plant under construction (fleet_from_inputs in GAMS).
-  2. Rank: dispatch the fleet against every realisation, minimising ENS. The
-     dispatches run at the same time.
-  3. If every realisation's ENS share is within the tolerance, stop.
-  4. Otherwise a least-cost expansion on the worst realisation, new capacity
-     floored at what earlier expansions built, and back to 2.
+1. starting fleet = the milestone's inputs: existing capacity after
+   retirement + plant under construction (fleet_from_inputs in GAMS)
+2. rank: dispatch that fleet against every realisation at the same time,
+   minimising ENS
+3. if every realisation's ENS share is under the tolerance, stop
+4. if not, least-cost expansion on the worst one (new capacity can't go below
+   what earlier expansions built), then back to 2
 
-Results are only used from optimal solves. One exception: a dispatch at status
-7 (feasible, not proven optimal) whose ENS share is within the tolerance. Its
-ENS is an upper bound on the minimum, so the realisation provably clears.
+only optimal results are used, except a dispatch at status 7 (feasible but not
+proven optimal) with ENS under the tolerance: the true minimum can only be
+lower, so it clears anyway.
 
-Every run starts the milestone from scratch: the work directory is emptied
-first. If the job dies, rerunning it redoes the milestone.
+the work dir is emptied at the start, so a rerun redoes the whole milestone.
 
 Usage:
     python3 pathway_step.py --model-dir <milestone dir> --work <output dir> \
@@ -39,18 +37,18 @@ import yaml
 HERE = Path(__file__).resolve().parent
 GAMS_DEFAULT = "/Library/Frameworks/GAMS.framework/Versions/53/Resources"
 
-# Model status a result may be used from: optimal, locally optimal, integer
-# solution (unit commitment). 7 only for a dispatch that clears, see judge().
+# [cl] modelstats we accept: 1 optimal, 2 locally optimal, 8 integer (UC)
+# 7 is ok for a dispatch if ENS is under the tolerance, see judge()
 OK_MODELSTAT = {1, 2, 8}
 FEASIBLE_MODELSTAT = 7
 
-# Files in a milestone directory that are not model inputs: what a solve
-# writes, the loop's log, the ledger. Never copied into a solve directory.
+# [cl] files in a milestone dir that aren't inputs, so they're not copied
+# into the solve dirs
 RESULT_FILES = ("results.gdx", "results.db", "results.db.tmp",
                 "results.db.compressed", "highres.lst", "highres.log",
                 "solve.log", "robust.log", "capacity_ledger.csv")
 
-# GAMS settings for a run outside the workflow. The rule passes its own.
+# [cl] GAMS settings used when running this script by hand, the rule passes its own
 SOLVE_ARGS = [
     "--psys_scen=BASE", "--esys_scen=BASE", "--weather_yr=2010", "--dem_yr=2010",
     "--co2_target_type=intensity", "--co2_target_extent=all",
@@ -61,20 +59,22 @@ SOLVE_ARGS = [
     "--EV_soc_max=0.8",
 ]
 
+# [cl] the numbers we read back from each solve
 SCALARS = ["o_modelstat", "o_solvestat", "o_ens_total", "o_ens_share"]
 
-# GAMS fails to load CPLEX when the solve directory's path is longer than about
-# 212 characters ("Could not find algorithm CPL", status 13), and cannot even
-# compile past about 228. Measured on GAMS 53, 2026-10-16.
+# [cl] GAMS can't load CPLEX if the solve dir path is longer than ~212 chars
+# ("Could not find algorithm CPL", status 13), and can't compile past ~228
+# (tested on GAMS 53, 16 Oct 2026)
 MAX_PATH = 210
 
 
+# [cl] print straight away, so the log is up to date while the job runs
 def say(*a):
     print(*a, flush=True)
 
 
 def script(name, *args):
-    """Run one of the sibling scripts and fail loudly."""
+    """[cl] run another script in this folder, stop with its output if it fails"""
     cmd = [sys.executable, str(HERE / name), *map(str, args)]
     r = subprocess.run(cmd, capture_output=True)
     if r.returncode != 0:
@@ -82,7 +82,7 @@ def script(name, *args):
 
 
 def setting(settings, name, default):
-    """The value of one --name=value GAMS setting."""
+    """[cl] value of one --name=value GAMS setting"""
     for s in settings:
         if s.startswith(f"--{name}="):
             return s.split("=", 1)[1]
@@ -90,6 +90,7 @@ def setting(settings, name, default):
 
 
 def copy_inputs(src, dst):
+    """[cl] copy a milestone's input files into a solve dir"""
     dst.mkdir(parents=True, exist_ok=True)
     for f in Path(src).iterdir():
         if f.is_file() and f.name not in RESULT_FILES:
@@ -97,7 +98,7 @@ def copy_inputs(src, dst):
 
 
 def query(db, sql):
-    """Rows of one query on a results.db, or [] if the table is missing."""
+    """[cl] run a query on results.db, [] if the table isn't there"""
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         return con.execute(sql).fetchall()
@@ -108,8 +109,8 @@ def query(db, sql):
 
 
 def solve(d, extra, settings, args):
-    """One GAMS solve in directory d, then results.gdx to results.db.
-    Returns the solve's scalars and its wall time."""
+    """[cl] one GAMS solve in dir d, then convert results.gdx to results.db
+    returns the scalars and how long it took"""
     t0 = time.time()
     cmd = [f"{args.gams}/gams", f"{args.code}/highres.gms", *settings, *extra, "lo=2"]
     with open(d / "solve.log", "w") as log:
@@ -123,8 +124,9 @@ def solve(d, extra, settings, args):
 
 
 def judge(s, what, path, tolerance=None):
-    """Whether a result may be used, and on what proof. Dispatches pass their
-    tolerance, expansions none, so an expansion must be optimal."""
+    """[cl] can we use this result, and why ("optimal" or "upper bound")
+    stops the run if not. dispatches pass the tolerance, expansions don't,
+    so an expansion has to be optimal"""
     stat = s.get("o_modelstat")
     if stat is None:
         sys.exit(f"{what}: no model status in the results. Look at {path / 'highres.log'}")
@@ -147,7 +149,7 @@ def judge(s, what, path, tolerance=None):
 
 
 def build_realisations(path, source, work, zones, settings, gams, vre_parquet):
-    """One input directory per realisation in the yaml file."""
+    """[cl] make an input dir for each realisation in the yaml, with make_realisation.py"""
     entries = yaml.safe_load(Path(path).read_text())
     out = {}
     for e in entries:
@@ -167,8 +169,8 @@ def build_realisations(path, source, work, zones, settings, gams, vre_parquet):
 
 
 def warn_vre_gaps(db):
-    """Warn where a zone's existing VRE, as the data bounds it, exceeds what its
-    grid cells hold. The fleet takes the cells, so that capacity would be lost."""
+    """[cl] warn if a zone has more existing VRE in the data than its grid cells
+    hold. the fleet is fixed per cell, so the difference would be lost"""
     zonal = query(db, "select z, g, upper from var_exist_pcap_z "
                       "where g in (select * from vre)")
     cells = dict(((z, v), s) for z, v, s in query(
@@ -181,7 +183,7 @@ def warn_vre_gaps(db):
 
 
 def start_fleet(args, settings, work, zones):
-    """The fleet of the milestone's inputs, as a fleet .dd."""
+    """[cl] starting fleet from the milestone's inputs, written to a .dd"""
     d = work / "start"
     copy_inputs(args.model_dir, d)
     solve(d, ["--fleet_from_inputs=ON"], settings, args)
@@ -195,7 +197,8 @@ def start_fleet(args, settings, work, zones):
 
 
 def rank(realisations, fleet_dd, work, settings, args, iteration):
-    """One fixed-fleet min-ENS dispatch per realisation, all at the same time."""
+    """[cl] dispatch the fixed fleet against each realisation, minimising ENS,
+    all at the same time"""
     def one(item):
         name, src = item
         d = work / f"iter{iteration}" / name
@@ -212,7 +215,8 @@ def rank(realisations, fleet_dd, work, settings, args, iteration):
 
 
 def expand(worst, fleet_dd, work, settings, args, iteration, zones):
-    """Least-cost expansion on the worst realisation, new capacity floored."""
+    """[cl] least-cost expansion on the worst realisation, new capacity can only
+    go up from what's already built"""
     d = work / f"iter{iteration}" / "expansion"
     copy_inputs(worst["src"], d)
     shutil.copy2(fleet_dd, d / "fixed_caps.dd")
@@ -247,7 +251,7 @@ def main():
 
     args.code = args.code or str((HERE / ".." / ".." / "resources" / "highRES-Europe-GAMS").resolve())
     zones = [z.strip() for z in args.zones.split(",") if z.strip()]
-    # Read before the work directory is emptied: the rule writes it there.
+    # [cl] read this before emptying the work dir, the rule puts it there
     if args.gams_settings:
         settings = json.loads(Path(args.gams_settings).read_text())
     else:
@@ -262,12 +266,14 @@ def main():
                                       zones, settings, args.gams, args.vre_parquet)
     say(f"realisations: {', '.join(realisations)}\n")
 
+    # [cl] check the solve dirs won't be too long for GAMS (see MAX_PATH)
     longest = max(len(str(work / f"iter{args.max_iter}" / n)) for n in [*realisations, "expansion"])
     if longest > MAX_PATH:
         sys.exit(f"solve directories would be up to {longest} characters long, over "
                  f"{MAX_PATH}, and GAMS then fails to load CPLEX. Use a shorter "
                  f"results path or shorter realisation names.")
 
+    # [cl] the loop: rank, stop if all clear, otherwise expand on the worst
     log, previous_worst, final_dir = [], None, None
     for iteration in range(1, args.max_iter + 1):
         res = rank(realisations, fleet_dd, work, settings, args, iteration)
@@ -288,11 +294,12 @@ def main():
         worst_name, worst = ranked[0]
         if worst["share"] <= args.tolerance:
             say(f"\nall realisations within tolerance at iteration {iteration}")
-            # Nothing built beyond plant under construction: any dispatch of
-            # this rank carries exactly that fleet.
+            # [cl] if nothing was expanded, any dispatch of this rank has the
+            # fleet we want, so use its results
             final_dir = final_dir or worst["dir"]
             break
 
+        # [cl] sanity check: more capacity can't make ENS go up
         if previous_worst is not None and worst["share"] > previous_worst + 1e-9:
             sys.exit(f"\nworst share rose from {previous_worst:.4%} to "
                      f"{worst['share']:.4%} after an expansion. Capacity only "
@@ -309,6 +316,7 @@ def main():
                                            iteration, zones)
         say(f"  expansion solved in {wall:.0f}s\n")
 
+    # [cl] save every rank's results, and a summary of the run
     with open(work / "iterations.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(log[0].keys()))
         w.writeheader()
@@ -321,6 +329,7 @@ def main():
          "final_results": str(final_dir / "results.gdx") if converged else None},
         indent=2))
 
+    # [cl] hand the final results.gdx to the workflow (the ledger reads it)
     if not converged:
         sys.exit("not converged: nothing delivered, so the pathway stops here")
     if args.results_to:

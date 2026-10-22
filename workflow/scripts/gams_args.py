@@ -1,9 +1,7 @@
-"""The GAMS settings for one highRES solve, built from a rule's params.
+"""[cl] GAMS settings for a highRES solve, from the rule's params
 
-Shared by run_gams.py (one ordinary solve per milestone) and run_robust_loop.py
-(the robust loop's many solves per milestone), so both run the model with the
-same scenario settings. The mode switches (ens_obj, fix_fleet, fleet_floor)
-are not here: each caller adds its own.
+used by both run_gams.py and run_robust_loop.py so they solve with the same
+scenario settings. ens_obj, fix_fleet and fleet_floor are added by each script
 """
 
 

@@ -1,13 +1,9 @@
-"""Snakemake wrapper for rule run_robust_loop: one milestone through the loop.
+"""[cl] wrapper for the run_robust_loop rule, runs pathway_step.py on one milestone
 
-Climate-Robust Pathways. Takes the place of run_gams when robust.enabled is
-set in the config. Instead of one expansion it runs pathway_step.py: dispatch
-the milestone's fleet against every realisation, expand on the worst, repeat
-until all clear. The final results.gdx goes where run_gams would have put it,
-so the ledger rule and everything after it are unchanged.
-
-The rule is one SLURM job per milestone, and every solve of the milestone
-runs inside it. Follow it in <milestone>/robust.log, this rule's log.
+used instead of run_gams when robust.enabled is on in the config.
+writes the final results.gdx to the same place run_gams would, so the ledger
+rule doesn't need to change.
+the whole milestone runs in one SLURM job, progress is in <milestone>/robust.log
 """
 
 import json
@@ -25,6 +21,7 @@ horizon = pathlib.Path(p.horizonpath)
 work = horizon / "robust"
 work.mkdir(parents=True, exist_ok=True)
 
+# [cl] pathway_step.py reads the GAMS settings from this file
 settings_file = work / "gams_settings.json"
 settings_file.write_text(json.dumps(gams_settings(p, w), indent=1))
 
@@ -43,6 +40,7 @@ cmd = [
     "--results-to", str(snakemake.output.modelresults),
 ]
 
+# [cl] print pathway_step's output and write it to the log as it comes
 with open(snakemake.log[0], "a") as log:
     log.write("\n$ " + " ".join(cmd) + "\n")
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE,
