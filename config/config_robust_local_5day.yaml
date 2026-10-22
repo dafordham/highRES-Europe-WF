@@ -96,10 +96,6 @@ parameters:
   # Only used if trans_inv set to USER
   trans_cap_lim: 20
 
-  # Stock expansion switches for run_gams. The robust loop sets its own.
-  fix_fleet: ""
-  ens_obj: "OFF"
-
   bias_correction: True
 
   elevation_excl: False

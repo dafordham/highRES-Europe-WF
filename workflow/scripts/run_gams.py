@@ -10,15 +10,7 @@ args = [
     snakemake.params.gamspath + "gams",
     snakemake.params.sharedcodepath / "highres.gms",
     *gams_settings(snakemake.params, snakemake.wildcards),
-    # Climate-Robust Pathways
-    "--ens_obj=" + str(snakemake.params.ens_obj),
 ]
-
-# fix_fleet names a .dd holding a solved fleet. Empty means capacity stays free,
-# as in a stock expansion run. It is appended only when set, so the default is a stock expansion run and configs that predate this switch keep working unchanged.
-fix_fleet = str(snakemake.params.fix_fleet).strip()
-if fix_fleet:
-    args.append("--fix_fleet=" + fix_fleet)
 
 process = subprocess.Popen(
     args,

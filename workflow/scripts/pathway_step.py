@@ -18,7 +18,8 @@ the work dir is emptied at the start, so a rerun redoes the whole milestone.
 
 Usage:
     python3 pathway_step.py --model-dir <milestone dir> --work <output dir> \
-        --zones AT,CZ,HU,PL --realisations-file <yaml> [--tolerance 0.05]
+        --zones AT,CZ,HU,PL --realisations-file <yaml> --gams-settings <txt> \
+        --gams <GAMS dir> --code <highres.gms dir> [--tolerance 0.05]
 """
 
 import argparse
@@ -34,7 +35,6 @@ from pathlib import Path
 import yaml
 
 HERE = Path(__file__).resolve().parent
-GAMS_DEFAULT = "/Library/Frameworks/GAMS.framework/Versions/53/Resources"
 
 # [cl] modelstats we accept: 1 optimal, 2 locally optimal, 8 integer (UC)
 # 7 is ok for a dispatch if ENS is under the tolerance, see judge()
@@ -43,20 +43,9 @@ FEASIBLE_MODELSTAT = 7
 
 # [cl] files in a milestone dir that aren't inputs, so they're not copied
 # into the solve dirs
-RESULT_FILES = ("results.gdx", "results.db", "results.db.tmp",
-                "results.db.compressed", "highres.lst", "highres.log",
-                "solve.log", "robust.log", "capacity_ledger.csv")
-
-# [cl] GAMS settings used when running this script by hand, the rule passes its own
-SOLVE_ARGS = [
-    "--psys_scen=BASE", "--esys_scen=BASE", "--weather_yr=2010", "--dem_yr=2010",
-    "--co2_target_type=intensity", "--co2_target_extent=all",
-    "--outname=results", "--store_initial_level=0.5", "--store_final_level=0.5",
-    "--hydro_res_initial_fill=0.8", "--hydro_res_min=0.5", "--pgen=20.0",
-    "--emis_price=0", "--trans_inv=TYNDP", "--trans_cap_lim=20", "--UC=OFF",
-    "--f_res=OFF", "--store_uc=OFF", "--EV=OFF", "--EV_flex=0", "--V2G=OFF",
-    "--EV_soc_max=0.8",
-]
+RESULT_FILES = ("results.gdx", "results.db", "results.db.compressed",
+                "highres.lst", "highres.log", "solve.log", "robust.log",
+                "capacity_ledger.csv")
 
 # [cl] the numbers we read back from each solve
 SCALARS = ["o_modelstat", "o_solvestat", "o_ens_total", "o_ens_share"]
@@ -240,21 +229,17 @@ def main():
                     help="ENS share of each realisation's own demand. 0.05 is a "
                          "placeholder, nowhere near a reliability standard")
     ap.add_argument("--max-iter", type=int, default=5)
-    ap.add_argument("--gams-settings",
-                    help="text file, one GAMS setting per line, from the rule. Default SOLVE_ARGS")
+    ap.add_argument("--gams-settings", required=True,
+                    help="text file, one GAMS setting per line (the rule writes it)")
     ap.add_argument("--vre-parquet", help="capacity factors, if not in --model-dir")
     ap.add_argument("--results-to", help="copy the final results.gdx here")
-    ap.add_argument("--gams", default=GAMS_DEFAULT)
-    ap.add_argument("--code", help="GAMS model directory")
+    ap.add_argument("--gams", required=True, help="GAMS system directory")
+    ap.add_argument("--code", required=True, help="GAMS model directory")
     args = ap.parse_args()
 
-    args.code = args.code or str((HERE / ".." / ".." / "resources" / "highRES-Europe-GAMS").resolve())
     zones = [z.strip() for z in args.zones.split(",") if z.strip()]
     # [cl] read this before emptying the work dir, the rule puts it there
-    if args.gams_settings:
-        settings = Path(args.gams_settings).read_text().splitlines()
-    else:
-        settings = [f"--codefolderpath={args.code}", *SOLVE_ARGS]
+    settings = Path(args.gams_settings).read_text().splitlines()
     work = args.work.resolve()
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
