@@ -156,31 +156,15 @@ def build_realisations(path, source, work, zones, settings, gams, vre_parquet):
     return out
 
 
-def warn_vre_gaps(db):
-    """[cl] warn if a zone has more existing VRE in the data than its grid cells
-    hold. the fleet is fixed per cell, so the difference would be lost"""
-    zonal = query(db, "select z, g, upper from var_exist_pcap_z "
-                      "where g in (select * from vre)")
-    cells = dict(((z, v), s) for z, v, s in query(
-        db, "select z, vre, sum(level) from var_exist_vre_pcap_r group by z, vre"))
-    for z, g, upper in zonal:
-        gap = upper - cells.get((z, g), 0.0)
-        if upper != float("inf") and gap > 1e-3:
-            say(f"  WARNING existing {g} in {z}: up to {upper:.4f} GW per zone, "
-                f"{cells.get((z, g), 0.0):.4f} GW in its cells. {gap:.4f} GW left out.")
-
-
-def start_fleet(args, settings, work, zones):
+def start_fleet(args, settings, work):
     """[cl] starting fleet from the milestone's inputs, written to a .dd"""
     d = work / "start"
     copy_inputs(args.model_dir, d)
     solve(d, ["--fleet_from_inputs=ON"], settings, args)
     if not (d / "results.db").is_file():
         sys.exit(f"fleet_from_inputs wrote no results. Look at {d / 'highres.log'}")
-    warn_vre_gaps(d / "results.db")
     fleet_dd = work / "fleet_start.dd"
-    script("caps2dd.py", "--from", d / "results.db", "--to", fleet_dd,
-           "--zones", ",".join(zones))
+    script("caps2dd.py", "--from", d / "results.db", "--to", fleet_dd)
     return fleet_dd
 
 
@@ -202,7 +186,7 @@ def rank(realisations, fleet_dd, work, settings, args, iteration):
         return dict(pool.map(one, realisations.items()))
 
 
-def expand(worst, fleet_dd, work, settings, args, iteration, zones):
+def expand(worst, fleet_dd, work, settings, args, iteration):
     """[cl] least-cost expansion on the worst realisation, new capacity can only
     go up from what's already built"""
     d = work / f"iter{iteration}" / "expansion"
@@ -211,8 +195,7 @@ def expand(worst, fleet_dd, work, settings, args, iteration, zones):
     s, wall = solve(d, ["--fleet_floor=fixed_caps"], settings, args)
     judge(s, f"iteration {iteration}, expansion", d)
     new_dd = work / f"iter{iteration}" / "fleet_after.dd"
-    script("caps2dd.py", "--from", d / "results.db", "--to", new_dd,
-           "--zones", ",".join(zones))
+    script("caps2dd.py", "--from", d / "results.db", "--to", new_dd)
     return d, new_dd, wall
 
 
@@ -245,7 +228,7 @@ def main():
     work.mkdir(parents=True)
 
     say(f"milestone {args.model_dir}, {len(zones)} zones, tolerance {args.tolerance:.1%}")
-    fleet_dd = start_fleet(args, settings, work, zones)
+    fleet_dd = start_fleet(args, settings, work)
     realisations = build_realisations(args.realisations_file, args.model_dir, work,
                                       zones, settings, args.gams, args.vre_parquet)
     say(f"realisations: {', '.join(realisations)}\n")
@@ -296,8 +279,7 @@ def main():
             break
 
         say(f"  expanding on {worst_name}")
-        final_dir, fleet_dd, wall = expand(worst, fleet_dd, work, settings, args,
-                                           iteration, zones)
+        final_dir, fleet_dd, wall = expand(worst, fleet_dd, work, settings, args, iteration)
         say(f"  expansion solved in {wall:.0f}s\n")
 
     # [cl] save every rank's results
