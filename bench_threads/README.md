@@ -66,6 +66,21 @@ CPLEX_OPTS="barepcomp=1e-6 predual=-1 BarOrder=3" sbatch $X --cpus-per-task=6  -
 About 145 core-hours. A setting counts only if it keeps the original's model
 status and ENS.
 
+## Rerun, 22 October
+
+The first round (21 Oct) was spoiled by failed writes on `/fp/projects01`,
+which had about 5% free for all of fox: jobs died at startup ("I/O error on
+write of gamsmatr.dat"), and `opt_now` lost its solution after CPLEX had
+found one (status file cut off mid-number). Valid from it: `exp60` 3 h 13,
+`rank20` 1 h 52, `exp90` over 6 h, and orderings 1 and 2 out of memory at
+60 GB with `predual 1`.
+
+The broken runs were resubmitted in four lanes, each one job after another
+(`--dependency=afterany`), so at most about six solves write at once. Lane 4
+brings stage 3 forward: the expansion at 30 threads with `barepcomp 1e-6`,
+and with Shahzad's settings. Jobs 4340137–49; the commands are in the
+briefing note. In `results.tsv` the newest line for each name counts.
+
 ## Collect
 
 ```bash
