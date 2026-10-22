@@ -81,6 +81,15 @@ brings stage 3 forward: the expansion at 30 threads with `barepcomp 1e-6`,
 and with Shahzad's settings. Jobs 4340137–49; the commands are in the
 briefing note. In `results.tsv` the newest line for each name counts.
 
+### What the rerun showed (22 Oct)
+
+`predual -1` with `BarOrder 3` solved stress_PL's dispatch to optimal in
+6 min 38 at 17.5 GB (7 min 38 at 6 threads), against 2 h 34 and status 7 with
+today's settings. Ordering 2 took 16 min, ordering 1 2 h 44. So the thread
+tests with today's settings were dropped (`rank10`, `exp10` cancelled), and
+the expansion with Shahzad's set was started at once, at 30 threads
+(`exp30_shz`) and 6 (`exp6_shz`, job 4341228).
+
 ## Collect
 
 ```bash
