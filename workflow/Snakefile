@@ -710,15 +710,8 @@ rule run_gams:
         **gams_params,
         horizonpath=lambda wildcards, output: str(pathlib.Path(output.modelresults).parent),
     # pathways
-    # The SLURM executor derives cpus_per_task from threads when
-    # cpus_per_task is not given as a resource, so this is what sizes the
-    # solve's allocation. It MUST match cplex_options.threads in the config,
-    # or CPLEX spawns a different number of threads than SLURM allocated.
-    #
-    # Declared per rule rather than through --default-resources cpus_per_task,
-    # which applied 30 cores to every submitted rule and left light ones 
-    # queueing for a 30-core slot they never use.
-    threads: 30
+    # [cl] the job's cores = CPLEX threads, so SLURM gives the solve what it uses
+    threads: config["cplex_options"]["threads"]
     resources:
         mem_mb=50000,
     log:

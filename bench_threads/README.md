@@ -81,6 +81,37 @@ brings stage 3 forward: the expansion at 30 threads with `barepcomp 1e-6`,
 and with Shahzad's settings. Jobs 4340137–49; the commands are in the
 briefing note. In `results.tsv` the newest line for each name counts.
 
+### What the rerun showed (22 Oct)
+
+`predual -1` with `BarOrder 3` solved stress_PL's dispatch to optimal in
+6 min 38 at 17.5 GB (7 min 38 at 6 threads), against 2 h 34 and status 7 with
+today's settings. Ordering 2 took 16 min, ordering 1 2 h 44. So the thread
+tests with today's settings were dropped (`rank10`, `exp10` cancelled), and
+the expansion with Shahzad's set was started at once, at 30 threads
+(`exp30_shz`) and 6 (`exp6_shz`, job 4341228).
+
+## Result and decision (23 October)
+
+`predual -1` is what makes the difference. With Shahzad's set (`predual -1`,
+`BarOrder 3`, `barepcomp 1e-6`) every solve was optimal with the same
+objective as ours:
+
+| solve | ours | new, 6 threads |
+|---|---|---|
+| second-rank dispatch | 2 h 34, 49 GB, status 7 | 7 min 38, 18 GB, optimal |
+| expansion | 3 h 57, 68 GB | 59 min 41, 21 GB |
+
+More threads were slower (expansion at 30 threads: 1 h 24). `barepcomp 1e-6`
+alone gained nothing (expansion 4 h 27), nor did `BarOrder 3` with
+`predual 1` (dispatch 2 h 58, status 7). Automatic ordering with `predual -1`
+was as fast as `BarOrder 3`. Crossover (`solutiontype 1`) was still in its
+first phase after 2 h 25 on top of the 1 h barrier, so `solutiontype` stays 2.
+
+By the rule above: `threads 6`, `predual -1`, `BarOrder 3`, `barepcomp 1e-6`,
+and the milestone job at 18 cores (3 dispatches x 6), 80 GB, 12 h. About
+1.5 h and 25 core-hours per milestone with one expansion, against 6 h and
+560 before. Not tested: the first-rank dispatches, which were 4–5 min anyway.
+
 ## Collect
 
 ```bash
