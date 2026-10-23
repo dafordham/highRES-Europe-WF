@@ -10,10 +10,10 @@ target: "capacity_ledger.csv"
 #   screen -S robust
 #   snakemake --configfile config/config_robust_fox.yaml --rerun-incomplete \
 #     --executor slurm --default-resources slurm_account=ec85 runtime=12h \
-#     --keep-going --latency-wait 30 -j 20 -c 90 --rerun-triggers mtime
+#     --keep-going --latency-wait 30 -j 20 -c 18 --rerun-triggers mtime
 #
-# -c 90 because Snakemake caps every rule's threads at -c: with -c 30 the
-# milestone job would get 30 cores instead of the 90 below.
+# [cl] -c 18 since snakemake caps every rule's threads at -c, so it has to be
+# at least robust.cores below
 #
 # Every rule except the light local ones is a SLURM job, and each milestone's
 # robust loop is ONE job (rule run_robust_loop, sized in the robust block
@@ -63,14 +63,14 @@ robust:
   # reliability standard.
   tolerance: 0.05
   max_iter: 5
-  # The milestone's one job. A rank runs the 3 dispatches at once, 30 CPLEX
-  # threads each, so 90 cores. Measured at full year (fox, 2026-10-19): a
-  # dispatch 50 GB, an expansion 68 GB, so 3 x 50 plus margin. An expansion
-  # takes about 4 h and a rank about 1.5 h: 7 h with one expansion, 12 h with
-  # two.
-  cores: 90
-  mem_mb: 180000
-  runtime: "24h"
+  # [cl] the milestone's one job. a rank runs the 3 dispatches at once with 6
+  # CPLEX threads each, so 18 cores. measured at full year with the
+  # cplex_options below (fox, 22-23 Oct, bench_threads/): dispatch ~7 min
+  # and 18 GB, expansion ~1 h and 21 GB. so ~1.5 h per milestone with one
+  # expansion, 3 x 18 GB at the peak, plus margin for real realisations
+  cores: 18
+  mem_mb: 80000
+  runtime: "12h"
 
 parameters:
   # developer keeps the shared input files their normal mode deletes as
@@ -268,8 +268,10 @@ parameters:
 cplex_options:
   lpmethod: 4
   solutiontype: 2
-  # Also the CPUs each solve job asks for
-  threads: 30
-  predual: 1
-  BarOrder: 0
-  barepcomp: 1E-7
+  # [cl] tested on fox 22-23 Oct (bench_threads/README.md). predual -1 is
+  # what makes it fast: dispatch 2.5 h -> 7 min, expansion 4 h -> 1 h.
+  # more threads were slower. crossover (solutiontype 1) took hours, so no
+  threads: 6
+  predual: -1
+  BarOrder: 3
+  barepcomp: 1E-6
