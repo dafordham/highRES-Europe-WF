@@ -1,4 +1,4 @@
-"""reads a solved fleet out of results.db and writes it as a .dd
+"""reads a solved fleet out of results.gdx and writes it as a .dd
 
 the loop uses it to turn a solve into the fleet for the next solve: the
 starting fleet (fleet_from_inputs), and the fleet after each expansion.
@@ -6,15 +6,14 @@ the .dd has the par_fix_* parameters that fix_fleet and fleet_floor read in
 highres.gms.
 
 Usage:
-    python3 caps2dd.py --from <results.db> --to <fixed_caps.dd>
+    python3 caps2dd.py --from <results.gdx> --to <fixed_caps.dd> --gams <GAMS dir>
 """
 
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
-import pandas as pd
+import gams.transfer as gt
 
 # [cl] anything under 0.1 MW is solver dust, not a real asset. the barrier
 # leaves values like 1e-8 GW, and fixing a fleet from 1e-8 to 1e5 GW makes the
@@ -22,7 +21,7 @@ import pandas as pd
 # something is wrong
 FLOOR_GW = 1e-4
 
-# [cl] table in results.db -> parameter name in the fix_fleet block
+# [cl] variable in results.gdx -> parameter name in the fix_fleet block
 FLEET = {
     "var_new_pcap_z": "par_fix_new_pcap_z",
     "var_exist_pcap_z": "par_fix_exist_pcap_z",
@@ -39,13 +38,13 @@ FLEET = {
 }
 
 
-def read_table(con, table):
-    """[cl] one variable table as {"AT.Solar": level, ...}, None if the table is missing"""
-    if not con.execute("select 1 from sqlite_master where name=?", (table,)).fetchone():
+def read_table(m, table):
+    """[cl] one variable as {"AT.Solar": level, ...}, None if it's not in the gdx"""
+    if table not in m.listSymbols():
         return None
-    df = pd.read_sql_query(f"select * from [{table}]", con)
-    # [cl] a variable that is zero everywhere comes out with only the set columns
-    if "level" not in df.columns:
+    df = m[table].records
+    # [cl] a variable that is zero everywhere has no records
+    if df is None:
         return {}
     # [cl] drop zeros, GAMS treats missing entries as zero anyway and fix_fleet
     # covers everything, so they still get fixed to zero
@@ -53,7 +52,7 @@ def read_table(con, table):
     df = df[df["level"] != 0.0]
     if df.empty:
         return {}
-    sets = [c for c in df.columns if c not in ("level", "marginal", "lower", "upper", "scale")]
+    sets = list(df.columns[:m[table].dimension])
     keys = df[sets].astype(str).agg(".".join, axis=1)
     return dict(zip(keys, df["level"]))
 
@@ -93,16 +92,20 @@ def remove_dust(data):
 def main():
     # Parses the command line
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--from", dest="src", required=True, help="solved results.db")
+    ap.add_argument("--from", dest="src", required=True, help="solved results.gdx")
+    ap.add_argument("--gams", required=True, help="GAMS system directory")
     ap.add_argument("--to", dest="dst", required=True, help="output .dd file")
     args = ap.parse_args()
     if not Path(args.src).is_file():
-        sys.exit(f"no results.db at {args.src}")
+        sys.exit(f"no results.gdx at {args.src}")
 
-    # Connect to the sqlite database in read-only mode and extract the parameter blocks.
-    con = sqlite3.connect(f"file:{args.src}?mode=ro", uri=True)
-    data = {par: read_table(con, table) for table, par in FLEET.items()}
-    con.close()
+    # [cl] read the capacity variables from the gdx (only those, it's big)
+    m = gt.Container(system_directory=args.gams)
+    m.read(args.src, records=False)
+    there = [t for t in FLEET if t in m.listSymbols()]
+    m = gt.Container(system_directory=args.gams)
+    m.read(args.src, symbols=there)
+    data = {par: read_table(m, table) for table, par in FLEET.items()}
     data = {par: values for par, values in data.items() if values is not None}
 
     remove_dust(data)

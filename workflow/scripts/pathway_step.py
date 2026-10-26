@@ -27,13 +27,13 @@ Usage:
 import argparse
 import csv
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import gams.transfer as gt
 import yaml
 
 HERE = Path(__file__).resolve().parent
@@ -87,29 +87,29 @@ def copy_inputs(src, dst):
             shutil.copy2(f, dst / f.name)
 
 
-def query(db, sql):
-    """[cl] run a query on results.db, [] if the table isn't there"""
-    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        return con.execute(sql).fetchall()
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        con.close()
+def read_gdx(path, names, gams):
+    """[cl] read the symbols in names that results.gdx has (only those, it's big)"""
+    m = gt.Container(system_directory=gams)
+    m.read(str(path), records=False)
+    there = [n for n in names if n in m.listSymbols()]
+    m = gt.Container(system_directory=gams)
+    if there:
+        m.read(str(path), symbols=there)
+    return m
 
 
 def solve(d, extra, settings, args):
-    """[cl] one GAMS solve in dir d, then convert results.gdx to results.db
-    returns the scalars and how long it took"""
+    """[cl] one GAMS solve in dir d. returns the scalars it wrote to results.gdx
+    (none if there's no gdx) and how long it took"""
     t0 = time.time()
     cmd = [f"{args.gams}/gams", f"{args.code}/highres.gms", *settings, *extra, "lo=2"]
     with open(d / "solve.log", "w") as log:
         subprocess.run(cmd, cwd=d, stdout=log, stderr=subprocess.STDOUT)
+    s = {}
     if (d / "results.gdx").is_file():
-        subprocess.run([f"{args.gams}/gamstool", "sqlitewrite",
-                        "gdxIn=results.gdx", "o=results.db"], cwd=d, capture_output=True)
-    names = ",".join(f"'{n}'" for n in SCALARS)
-    s = dict(query(d / "results.db", f"select name, value from scalars where name in ({names})"))
+        m = read_gdx(d / "results.gdx", SCALARS, args.gams)
+        # [cl] a scalar that is zero has no record, so toValue gives None
+        s = {n: m[n].toValue() or 0.0 for n in m.listSymbols()}
     return s, time.time() - t0
 
 
@@ -158,10 +158,10 @@ def start_fleet(args, settings, work):
     d = work / "start"
     copy_inputs(args.model_dir, d)
     solve(d, ["--fleet_from_inputs=ON"], settings, args)
-    if not (d / "results.db").is_file():
+    if not (d / "results.gdx").is_file():
         sys.exit(f"fleet_from_inputs wrote no results. Look at {d / 'highres.log'}")
     fleet_dd = work / "fleet_start.dd"
-    script("caps2dd.py", "--from", d / "results.db", "--to", fleet_dd)
+    script("caps2dd.py", "--from", d / "results.gdx", "--to", fleet_dd, "--gams", args.gams)
     return fleet_dd
 
 
@@ -192,7 +192,7 @@ def expand(worst, fleet_dd, work, settings, args, iteration):
     s, wall = solve(d, ["--fleet_floor=fixed_caps"], settings, args)
     judge(s, f"iteration {iteration}, expansion", d)
     new_dd = work / f"iter{iteration}" / "fleet_after.dd"
-    script("caps2dd.py", "--from", d / "results.db", "--to", new_dd)
+    script("caps2dd.py", "--from", d / "results.gdx", "--to", new_dd, "--gams", args.gams)
     return d, new_dd, wall
 
 
