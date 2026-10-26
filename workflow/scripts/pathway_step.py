@@ -10,9 +10,11 @@ called by the run_robust_loop rule, once per milestone, all in one SLURM job.
 4. if not, least-cost expansion on the worst one (new capacity can't go below
    what earlier expansions built), then back to 2
 
-only optimal results are used, except a dispatch at status 7 (feasible but not
-proven optimal) with ENS under the tolerance: the true minimum can only be
-lower, so it clears anyway.
+expansions have to be optimal. a dispatch can also end at status 7 (feasible
+but not proven optimal), its ENS is then an upper bound on the minimum: under
+the tolerance that's enough to say it clears, over it we rank on it anyway.
+the barrier stops close to the optimum (2050 on fox, 26 Oct: primal and dual
+0.001% apart), worst case is one expansion we didn't need
 
 the work dir is emptied at the start, so a rerun redoes the whole milestone.
 
@@ -37,7 +39,7 @@ import yaml
 HERE = Path(__file__).resolve().parent
 
 # [cl] modelstats we accept: 1 optimal, 2 locally optimal, 8 integer (UC)
-# 7 is ok for a dispatch if ENS is under the tolerance, see judge()
+# 7 is ok for a dispatch too, see judge()
 OK_MODELSTAT = {1, 2, 8}
 FEASIBLE_MODELSTAT = 7
 
@@ -111,24 +113,19 @@ def solve(d, extra, settings, args):
     return s, time.time() - t0
 
 
-def judge(s, what, path, tolerance=None):
-    """[cl] can we use this result, and why ("optimal" or "upper bound")
-    stops the run if not. dispatches pass the tolerance, expansions don't,
-    so an expansion has to be optimal"""
+def judge(s, what, path, dispatch=False):
+    """[cl] can we use this result, and why ("optimal", or "upper bound" for a
+    dispatch at status 7). stops the run if not. an expansion has to be optimal"""
     stat = s.get("o_modelstat")
     if stat is None:
         sys.exit(f"{what}: no model status in the results. Look at {path / 'highres.log'}")
-    stat, share = int(stat), s.get("o_ens_share")
+    stat = int(stat)
     if stat in OK_MODELSTAT:
         return "optimal"
-    if stat == FEASIBLE_MODELSTAT and tolerance is not None:
-        if share <= tolerance:
-            return "upper bound"
-        sys.exit(f"{what}: status 7 (feasible, not proven optimal) with ENS share "
-                 f"{share:.4%}, above the tolerance. The true minimum could be "
-                 f"lower, so it cannot be ranked. Look at {path / 'highres.lst'}")
+    if stat == FEASIBLE_MODELSTAT and dispatch:
+        return "upper bound"
     hint = ""
-    if tolerance is None:
+    if not dispatch:
         hint = ("\n  An infeasible expansion means this realisation cannot be "
                 "served within the limits of the inputs\n  (growth ceilings, "
                 "plant under construction, transmission limits, land).")
@@ -177,7 +174,7 @@ def rank(realisations, fleet_dd, work, settings, args, iteration):
         copy_inputs(src, d)
         shutil.copy2(fleet_dd, d / "fixed_caps.dd")
         s, wall = solve(d, ["--ens_obj=ON", "--fix_fleet=fixed_caps"], settings, args)
-        proof = judge(s, f"iteration {iteration}, {name}", d, args.tolerance)
+        proof = judge(s, f"iteration {iteration}, {name}", d, dispatch=True)
         return name, {"dir": d, "src": src, "wall": wall, "share": s["o_ens_share"],
                       "ens": s["o_ens_total"], "modelstat": int(s["o_modelstat"]),
                       "proof": proof}
