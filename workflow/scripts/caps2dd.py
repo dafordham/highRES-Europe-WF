@@ -1,23 +1,23 @@
-"""Extract a solved fleet from a highRES results.db and write it as a .dd file.
+"""Extract a solved fleet from a highRES results.gdx and write it as a .dd file.
 
 Climate-Robust Pathways. The pathway loop carries a fleet from one step to the
 next and re-dispatches it against many climate realisations, so a solved system
 has to become an input. This reads the capacity variables out of a solved run
 and emits the parameters that the fix_fleet block in highres.gms expects.
 
-Reads results.db rather than results.gdx: the workflow already produces it via
-`gamstool sqlitewrite`.
+Reads results.gdx with gams.transfer. (It read a results.db converted from the
+gdx until 26 Oct 2026, but that 1.1 GB write failed on fox's shared disk.)
 
 Usage:
-    python3 caps2dd.py --from <results.db> --to <fixed_caps.dd>
+    python3 caps2dd.py --from <results.gdx> --to <fixed_caps.dd> --gams <GAMS dir>
 """
 
 import argparse
-import sqlite3
 import sys
 from pathlib import Path
 
 import numpy as np
+import gams.transfer as gt
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -39,11 +39,7 @@ MIN_CAPACITY_GW = 1e-4
 # than the floor is a genuine problem, since these variables are declared
 # positive.
 
-# Columns every gamstool sqlitewrite variable table carries. Anything else is
-# a set dimension.
-VALUE_COLS = {"level", "marginal", "lower", "upper", "scale"}
-
-# results.db table -> parameter name declared in the fix_fleet block.
+# results.gdx variable -> parameter name declared in the fix_fleet block.
 FLEET = {
     "var_new_pcap_z": "par_fix_new_pcap_z",
     "var_exist_pcap_z": "par_fix_exist_pcap_z",
@@ -59,11 +55,6 @@ FLEET = {
     "var_exist_trans_pcap": "par_fix_exist_trans_pcap",
 }
 
-def table_exists(con, name):
-    q = "select 1 from sqlite_master where type='table' and name=?"
-    return con.execute(q, (name,)).fetchone() is not None
-
-
 def fmt(v):
     # Fixed-point, because GAMS is picky about numeric literals.
     #
@@ -78,20 +69,18 @@ def fmt(v):
     return f"{v:.{ROUNDDP}f}"
 
 
-def read_table(con, table):
-    """Read one variable table into {dotted key: level}, or None if absent."""
-    if not table_exists(con, table):
+def read_table(m, table):
+    """Read one variable into {dotted key: level}, or None if absent."""
+    if table not in m.listSymbols():
         print(f"  {table:<26} MISSING - skipped", file=sys.stderr)
         return None
 
-    df = pd.read_sql_query(f"select * from [{table}]", con)
-    dims = [c for c in df.columns if c not in VALUE_COLS]
-    if not dims:
-        raise ValueError(f"{table} has no set dimensions")
+    df = m[table].records
     # A variable with no records at all (every level zero, no bound ever
-    # assigned) comes out of gamstool as a table of set columns only.
-    if "level" not in df.columns:
+    # assigned) has no records table.
+    if df is None:
         return {}
+    dims = list(df.columns[:m[table].dimension])
 
     df = df[dims + ["level"]].copy()
     df["level"] = df["level"].astype(float).round(ROUNDDP)
@@ -185,7 +174,8 @@ def floor_fleet(data, floor):
 def main():
     # Parses the command line
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--from", dest="src", required=True, help="solved results.db")
+    ap.add_argument("--from", dest="src", required=True, help="solved results.gdx")
+    ap.add_argument("--gams", required=True, help="GAMS system directory")
     ap.add_argument("--to", dest="dst", required=True, help="output .dd file")
     ap.add_argument("--zones", default="",
                     help="comma separated zones this fleet covers, written as "
@@ -199,22 +189,21 @@ def main():
     # Gives the pathlib.Path objects for the input and output files, and checks that the input exists.
     src, dst = Path(args.src), Path(args.dst)
     if not src.is_file():
-        sys.exit(f"no results.db at {src}")
+        sys.exit(f"no results.gdx at {src}")
     dst.parent.mkdir(parents=True, exist_ok=True)
 
-    # Connect to the sqlite database in read-only mode and extract the parameter blocks.
-    con = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
-    try:
-        print(f"reading {src}")
-        data, missing = {}, []
-        for table, parname in FLEET.items():
-            values = read_table(con, table)
-            if values is None:
-                missing.append(table)
-                continue
+    # Read the capacity variables from the gdx and extract the parameter blocks.
+    print(f"reading {src}")
+    m = gt.Container(system_directory=args.gams)
+    m.read(str(src), records=False)
+    there = [t for t in FLEET if t in m.listSymbols()]
+    m = gt.Container(system_directory=args.gams)
+    m.read(str(src), symbols=there)
+    data = {}
+    for table, parname in FLEET.items():
+        values = read_table(m, table)
+        if values is not None:
             data[parname] = values
-    finally:
-        con.close()
 
     dropped, clamped = floor_fleet(data, args.floor)
     if clamped:

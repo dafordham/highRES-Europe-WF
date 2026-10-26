@@ -31,13 +31,13 @@ import argparse
 import csv
 import json
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import gams.transfer as gt
 import yaml
 
 HERE = Path(__file__).resolve().parent
@@ -100,29 +100,29 @@ def copy_inputs(src, dst):
             shutil.copy2(f, dst / f.name)
 
 
-def query(db, sql):
-    """Rows of one query on a results.db, or [] if the table is missing."""
-    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    try:
-        return con.execute(sql).fetchall()
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        con.close()
+def read_gdx(path, names, gams):
+    """The symbols in names that a results.gdx holds, read with gams.transfer."""
+    m = gt.Container(system_directory=gams)
+    m.read(str(path), records=False)
+    there = [n for n in names if n in m.listSymbols()]
+    m = gt.Container(system_directory=gams)
+    if there:
+        m.read(str(path), symbols=there)
+    return m
 
 
 def solve(d, extra, settings, args):
-    """One GAMS solve in directory d, then results.gdx to results.db.
-    Returns the solve's scalars and its wall time."""
+    """One GAMS solve in directory d. Returns the scalars it wrote to
+    results.gdx (none if it wrote no results.gdx) and its wall time."""
     t0 = time.time()
     cmd = [f"{args.gams}/gams", f"{args.code}/highres.gms", *settings, *extra, "lo=2"]
     with open(d / "solve.log", "w") as log:
         subprocess.run(cmd, cwd=d, stdout=log, stderr=subprocess.STDOUT)
+    s = {}
     if (d / "results.gdx").is_file():
-        subprocess.run([f"{args.gams}/gamstool", "sqlitewrite",
-                        "gdxIn=results.gdx", "o=results.db"], cwd=d, capture_output=True)
-    names = ",".join(f"'{n}'" for n in SCALARS)
-    s = dict(query(d / "results.db", f"select name, value from scalars where name in ({names})"))
+        m = read_gdx(d / "results.gdx", SCALARS, args.gams)
+        # A scalar that is zero has no record, so toValue gives None
+        s = {n: m[n].toValue() or 0.0 for n in m.listSymbols()}
     return s, time.time() - t0
 
 
@@ -166,18 +166,22 @@ def build_realisations(path, source, work, zones, settings, gams, vre_parquet):
     return out
 
 
-def warn_vre_gaps(db):
+def warn_vre_gaps(gdx, gams):
     """Warn where a zone's existing VRE, as the data bounds it, exceeds what its
     grid cells hold. The fleet takes the cells, so that capacity would be lost."""
-    zonal = query(db, "select z, g, upper from var_exist_pcap_z "
-                      "where g in (select * from vre)")
-    cells = dict(((z, v), s) for z, v, s in query(
-        db, "select z, vre, sum(level) from var_exist_vre_pcap_r group by z, vre"))
-    for z, g, upper in zonal:
-        gap = upper - cells.get((z, g), 0.0)
+    m = read_gdx(gdx, ["vre", "var_exist_pcap_z", "var_exist_vre_pcap_r"], gams)
+    vre = set(m["vre"].records.iloc[:, 0].astype(str))
+    zonal = m["var_exist_pcap_z"].records
+    cells = m["var_exist_vre_pcap_r"].records
+    cells = cells.groupby([cells.iloc[:, 0].astype(str), cells.iloc[:, 1].astype(str)])["level"].sum()
+    for z, g, upper in zip(zonal.iloc[:, 0].astype(str), zonal.iloc[:, 1].astype(str), zonal["upper"]):
+        if g not in vre:
+            continue
+        held = float(cells.get((z, g), 0.0))
+        gap = upper - held
         if upper != float("inf") and gap > 1e-3:
             say(f"  WARNING existing {g} in {z}: up to {upper:.4f} GW per zone, "
-                f"{cells.get((z, g), 0.0):.4f} GW in its cells. {gap:.4f} GW left out.")
+                f"{held:.4f} GW in its cells. {gap:.4f} GW left out.")
 
 
 def start_fleet(args, settings, work, zones):
@@ -185,11 +189,11 @@ def start_fleet(args, settings, work, zones):
     d = work / "start"
     copy_inputs(args.model_dir, d)
     solve(d, ["--fleet_from_inputs=ON"], settings, args)
-    if not (d / "results.db").is_file():
+    if not (d / "results.gdx").is_file():
         sys.exit(f"fleet_from_inputs wrote no results. Look at {d / 'highres.log'}")
-    warn_vre_gaps(d / "results.db")
+    warn_vre_gaps(d / "results.gdx", args.gams)
     fleet_dd = work / "fleet_start.dd"
-    script("caps2dd.py", "--from", d / "results.db", "--to", fleet_dd,
+    script("caps2dd.py", "--from", d / "results.gdx", "--to", fleet_dd, "--gams", args.gams,
            "--zones", ",".join(zones))
     return fleet_dd
 
@@ -219,7 +223,7 @@ def expand(worst, fleet_dd, work, settings, args, iteration, zones):
     s, wall = solve(d, ["--fleet_floor=fixed_caps"], settings, args)
     judge(s, f"iteration {iteration}, expansion", d)
     new_dd = work / f"iter{iteration}" / "fleet_after.dd"
-    script("caps2dd.py", "--from", d / "results.db", "--to", new_dd,
+    script("caps2dd.py", "--from", d / "results.gdx", "--to", new_dd, "--gams", args.gams,
            "--zones", ",".join(zones))
     return d, new_dd, wall
 
