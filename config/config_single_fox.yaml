@@ -1,0 +1,17 @@
+# [cl] the single-year pathway, for figure 1. same inputs and settings as the
+# robust run, but each milestone is one ordinary least-cost expansion on the
+# weather year (rule run_gams), no realisations. only the lines below differ,
+# so give it AFTER the robust config, snakemake merges the two:
+#
+#   snakemake --configfile config/config_robust_fox.yaml config/config_single_fox.yaml \
+#     --rerun-incomplete --executor slurm --default-resources slurm_account=ec85 \
+#     runtime=4h --keep-going --latency-wait 30 -j 20 -c 18 --rerun-triggers mtime
+#
+# runtime=4h: an expansion takes 1-2 h with the CPLEX settings in the robust
+# config, and a short limit starts sooner
+
+paths:
+  results: /fp/projects01/ec85/models/davidac/Article_pathways/work_fox_single
+
+robust:
+  enabled: false
