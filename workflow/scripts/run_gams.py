@@ -4,7 +4,7 @@ from gams_args import gams_settings
 
 # TODO - test on linux
 
-# The settings live in gams_args.py, shared with run_robust_loop.py, so a
+# [cl] The settings live in gams_args.py, shared with run_robust_loop.py, so a
 # milestone solved by the robust loop uses exactly the settings of this rule.
 args = [
     snakemake.params.gamspath + "gams",
@@ -28,9 +28,9 @@ with open(snakemake.log[1], "w") as f:
         if not line and process.poll() is not None:
             break
         print(line.decode(), end="")
-        f.write(line.decode())  # keep newlines, or the log is one run-on line
+        f.write(line.decode())  # [cl] keep newlines, or the log is one run-on line
 
-# GAMS errors (licensing, compilation, execution) do not raise on their own:
+# [cl] GAMS errors (licensing, compilation, execution) do not raise on their own:
 # they just leave results.gdx missing, which snakemake reports as an opaque
 # "message: None". Fail here with the end of the log so the real cause is in
 # the first log anyone reads.

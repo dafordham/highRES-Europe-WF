@@ -90,7 +90,7 @@ def remove_dust(data):
 
 
 def main():
-    # Parses the command line
+    # [cl] Parses the command line
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--from", dest="src", required=True, help="solved results.gdx")
     ap.add_argument("--gams", required=True, help="GAMS system directory")

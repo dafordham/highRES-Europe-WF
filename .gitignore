@@ -1,21 +1,21 @@
-# --- Python / general ---
+# [cl] --- Python / general ---
 __pycache__/
 *.py[cod]
 *.ipynb_checkpoints/
 .DS_Store
 
-# --- Conda / virtual envs ---
+# [cl] --- Conda / virtual envs ---
 env/
 .venv/
 venv/
 *.lock
 
-# --- Snakemake working dirs ---
+# [cl] --- Snakemake working dirs ---
 .snakemake/
 *.snakemake.log
 
-# --- HighRES: large input data ---
-# shared_input/ is a symlink to the copy in Article_Marianne. intermediate_data
+# [cl] --- HighRES: large input data ---
+# [cl] shared_input/ is a symlink to the copy in Article_Marianne. intermediate_data
 # is a 1.1 GB copy of the outputs of build_shapes and build_vre_cf_grid, the two
 # rules that need ~50 GB RAM. Neither belongs in git, and neither survives a
 # fresh clone. See CLAUDE.md for how to reconstitute them.
@@ -27,7 +27,7 @@ resources.zip
 weatherdata.zip
 geodata.zip
 
-# --- HighRES: generated work/results ---
+# [cl] --- HighRES: generated work/results ---
 work/
 **/work/
 *.gdx
@@ -43,18 +43,18 @@ work/
 *.xlsx
 *.txt
 
-# Run output dirs, named work_<machine>_<horizon>_<mode>. Glob so renaming the
+# [cl] Run output dirs, named work_<machine>_<horizon>_<mode>. Glob so renaming the
 # scheme cannot silently un-ignore gigabytes.
 work_*/
 **/work_*/
 
-# --- OS / editor junk ---
+# [cl] --- OS / editor junk ---
 Thumbs.db
 .idea/
 .vscode/
 *.swp
 
-# Assistant scratch and instruction files. Kept on the laptop but never
+# [cl] Assistant scratch and instruction files. Kept on the laptop but never
 # version-controlled, so they do not propagate to fox or to the group's fork.
 CLAUDE.md
 .claude/

@@ -157,7 +157,7 @@ localrules:
     build_zones_file,
     build_shapes,
     # pathways
-    # build_vre_cf_grid and build_vre_land_avail need ~50 GB each, so they are
+    # [cl] build_vre_cf_grid and build_vre_land_avail need ~50 GB each, so they are
     # not local: on fox a local rule runs on the login node.
     build_vre_cf_inputs,
     build_vre_areas_file,
@@ -174,7 +174,7 @@ localrules:
     build_capacity_ledger,
     build_ev_inputs,
     build_inputs,
-    # run_gams is deliberately NOT listed here. As a local rule it executes in
+    # [cl] run_gams is deliberately NOT listed here. As a local rule it executes in
     # the Snakemake process itself, which on fox means the solve runs on the
     # login node. Leave it out so --executor slurm submits it as a job.
     #
@@ -473,7 +473,7 @@ rule build_vre_areas_file:
             if windoff_floating
             else []
         ),
-        # pathways: ancient, so editing or pulling the scripts does not rebuild every milestone
+        # pathways: [cl] ancient, so editing or pulling the scripts does not rebuild every milestone
         data2dd=ancient(pathlib.Path(workflow.basedir) / "scripts"),
         technoeconomic_database="resources/highres_technoeconomic_database.ods",
     output:
@@ -609,7 +609,7 @@ rule build_ev_inputs:
         "resources/ev_data/EV_driving_demand_kWh.csv",
         "resources/ev_data/EV_charging_demand_to_EV_kWh.csv",
         ev_scenarios="resources/ev_data/ev_scenarios.csv",
-        # pathways: ancient, so editing or pulling the scripts does not rebuild every milestone
+        # pathways: [cl] ancient, so editing or pulling the scripts does not rebuild every milestone
         data2dd=ancient(pathlib.Path(workflow.basedir) / "scripts"),
     output:
         horizonpath / "ev_data.dd",
@@ -674,7 +674,7 @@ gams_inputs = [
 ]
 
 # pathways
-# The scenario settings of a solve, shared by run_gams and run_robust_loop so
+# [cl] The scenario settings of a solve, shared by run_gams and run_robust_loop so
 # that both solve a milestone the same way. workflow/scripts/gams_args.py turns
 # them into GAMS arguments.
 gams_params = dict(
@@ -725,7 +725,7 @@ rule run_gams:
 
 
 # pathways
-# Climate-Robust Pathways. With robust.enabled in the config, a milestone is
+# [cl] Climate-Robust Pathways. With robust.enabled in the config, a milestone is
 # solved by the robust loop instead of one expansion: dispatch the fleet
 # against every realisation, expand on the worst, repeat until all clear
 # (workflow/scripts/pathway_step.py). Both rules write the same results.gdx,
@@ -750,7 +750,7 @@ rule run_robust_loop:
         robust=robust,
         zones=aggregated_regions,
         scriptsdir=pathlib.Path(workflow.basedir) / "scripts",
-    # One job for the whole milestone. A rank runs one dispatch per
+    # [cl] One job for the whole milestone. A rank runs one dispatch per
     # realisation at the same time, so cores = realisations x CPLEX threads.
     threads: robust.get("cores", 1)
     resources:
@@ -781,7 +781,7 @@ rule build_capacity_ledger:
         zones="resources/zones.csv",
         results_gdx=rules.run_gams.output.modelresults,
         prior_ledger=resolve_prior_ledger,
-        # pathways: ancient, so editing or pulling the scripts does not rebuild every milestone
+        # pathways: [cl] ancient, so editing or pulling the scripts does not rebuild every milestone
         data2dd=ancient(pathlib.Path(workflow.basedir) / "scripts"),
         gen_database="resources/gen_database.csv",
     output:

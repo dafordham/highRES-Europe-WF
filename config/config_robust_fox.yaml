@@ -1,11 +1,11 @@
 target: "capacity_ledger.csv"
 
-# CLIMATE-ROBUST PATHWAYS, the whole pathway with the robust loop, on fox, full
+# [cl] CLIMATE-ROBUST PATHWAYS, the whole pathway with the robust loop, on fox, full
 # year. In the format of Shahzad and Guillermo's pathway_planning Snakefile:
 # their inputs step retires plant and sets each milestone's limits, the robust
 # loop solves the milestone, their ledger step carries what was built forward.
 #
-# Launch from inside screen on a login node, and check the prompt changed:
+# [cl] Launch from inside screen on a login node, and check the prompt changed:
 #
 #   screen -S robust
 #   snakemake --configfile config/config_robust_fox.yaml --rerun-incomplete \
@@ -15,13 +15,13 @@ target: "capacity_ledger.csv"
 # [cl] -c 18 since snakemake caps every rule's threads at -c, so it has to be
 # at least robust.cores below
 #
-# Every rule except the light local ones is a SLURM job, and each milestone's
+# [cl] Every rule except the light local ones is a SLURM job, and each milestone's
 # robust loop is ONE job (rule run_robust_loop, sized in the robust block
 # below). Snakemake only waits here. Follow a milestone in
 # <milestone>/robust.log. If a job or Snakemake dies, rerun the same command:
 # finished milestones are kept, an unfinished one starts again.
 #
-# The target is each milestone's capacity ledger, so the analysis files
+# [cl] The target is each milestone's capacity ledger, so the analysis files
 # (results.db, parquet) are not built here: convert_results_db_parquet is a
 # local rule that declares 50 GB. To stop after one milestone, give its
 # capacity_ledger.csv as the FIRST argument, as an absolute path (the
@@ -29,37 +29,37 @@ target: "capacity_ledger.csv"
 # target placed after it). --rerun-triggers mtime stops their changed
 # build_vre_cf_grid notebook from forcing that rule to rerun.
 #
-# Give runtime WITH a unit. A plain number is read as SECONDS: runtime=720
+# [cl] Give runtime WITH a unit. A plain number is read as SECONDS: runtime=720
 # gave a 12-minute limit (fox, 2026-10-16). No mem_mb_per_cpu: it overrides
 # each rule's own mem_mb (22 CPUs x 4000 gave a 50 GB rule 88 GB).
 #
-# Check dusage -p ec85 before launching. A full-year milestone left about 4 GB.
+# [cl] Check dusage -p ec85 before launching. A full-year milestone left about 4 GB.
 #
-# Needs two files that are not in git and come from them:
+# [cl] Needs two files that are not in git and come from them:
 # resources/gen_database.csv and resources/europe_demand_<esys>_<horizon>.csv,
 # and their version of highres_technoeconomic_database.ods (growth rates, the
 # Installed year column for transmission).
 #
-# One value per scenario list, so one pathway. Every list multiplies the
+# [cl] One value per scenario list, so one pathway. Every list multiplies the
 # number of pathways.
 
 paths:
   gams: /fp/projects01/ec85/.bin/gams/gams54.1_linux_x64_64_sfx/  # slash at the end is required
   shared_input: shared_input
-  # MUST point at THIS project's GAMS submodule (branch: pathways). Pointing it
+  # [cl] MUST point at THIS project's GAMS submodule (branch: pathways). Pointing it
   # at Article_Marianne silently solves the other project's model.
   abs_shared_code: /fp/projects01/ec85/models/davidac/Article_pathways/highRES-Europe-WF/resources/highRES-Europe-GAMS/
   results: /fp/projects01/ec85/models/davidac/Article_pathways/work_fox_robust
 
-# The robust loop (rule run_robust_loop, workflow/scripts/pathway_step.py).
+# [cl] The robust loop (rule run_robust_loop, workflow/scripts/pathway_step.py).
 # With enabled: false every milestone is one ordinary expansion (run_gams), as
 # in their workflow, which gives the deterministic pathway to compare against.
 robust:
   enabled: true
-  # Realisations per milestone. Mock ones, scaled from the weather year, until
+  # [cl] Realisations per milestone. Mock ones, scaled from the weather year, until
   # C2E. A yaml list, see the file.
   realisations: config/realisations_zonal_test.yaml
-  # ENS share of each realisation's own demand. A placeholder, nowhere near a
+  # [cl] ENS share of each realisation's own demand. A placeholder, nowhere near a
   # reliability standard.
   tolerance: 0.05
   max_iter: 5
@@ -73,13 +73,13 @@ robust:
   runtime: "12h"
 
 parameters:
-  # developer keeps the shared input files their normal mode deletes as
+  # [cl] developer keeps the shared input files their normal mode deletes as
   # temporary. Otherwise a later milestone rebuilds them, and the newer files
   # make every finished milestone rerun.
   mode: [
     "developer",
   ]
-  # One weather year for every milestone, or one per milestone.
+  # [cl] One weather year for every milestone, or one per milestone.
   years: [
     "2010",
   ]
@@ -93,10 +93,10 @@ parameters:
 
   planning_horizons: ["2030", "2035", "2040", "2045", "2050"]
 
-  # Year up to which existing capacity is taken for the first milestone
+  # [cl] Year up to which existing capacity is taken for the first milestone
   baseline_year: 2026
 
-  # Allowance (MW) per technology for the growth-rate ceiling, so a technology
+  # [cl] Allowance (MW) per technology for the growth-rate ceiling, so a technology
   # with little or no build history is not capped at zero growth. Anything not
   # listed gets 0. Their values.
   gen_growth_seed_mw:
@@ -106,7 +106,7 @@ parameters:
     WindoffshoreFloat: 1000
     HydroRoR: 1000
 
-  # Growth rate scenarios, defined in the technoeconomic database. "UP"
+  # [cl] Growth rate scenarios, defined in the technoeconomic database. "UP"
   # because that is the label their growth rows carry (2026-10-16); their code
   # keeps only rows labelled with the scenario. Back to their names once the
   # spreadsheet has them.
@@ -149,7 +149,7 @@ parameters:
   cutoff_onwind: 0.1
   cutoff_offwind: 0.20
 
-  # Format is MM-DD, end date inclusive. Full year.
+  # [cl] Format is MM-DD, end date inclusive. Full year.
   date_range: ["01-01", "12-31"]
 
   EV: "OFF"
@@ -157,11 +157,11 @@ parameters:
   EV_flex: 0
   V2G: "OFF"
   EV_soc_max: 0.8
-  # Hourly minimum state of charge, 24 values, as in their config
+  # [cl] Hourly minimum state of charge, 24 values, as in their config
   EV_soc_min: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.7, 0.2, 0.2, 0.2, 0.2,
                0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
 
-  # Full 28-zone set — MUST match config_ci.yaml. Changing this list invalidates
+  # [cl] Full 28-zone set — MUST match config_ci.yaml. Changing this list invalidates
   # intermediate_data/ and forces the two ~50 GB input rules to re-run, which the
   # 18 GB laptop cannot do. Restrict local cost via date_range instead.
   aggregated_regions: [
