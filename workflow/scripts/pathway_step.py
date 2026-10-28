@@ -6,9 +6,12 @@ called by the run_robust_loop rule, once per milestone, all in one SLURM job.
    retirement + plant under construction (fleet_from_inputs in GAMS)
 2. rank: dispatch that fleet against every realisation at the same time,
    minimising ENS
-3. if every realisation's ENS share is under the tolerance, stop
-4. if not, least-cost expansion on the worst one (new capacity can't go below
-   what earlier expansions built), then back to 2
+3. least-cost expansion on the worst one. the first time always, also when
+   everything already clears (decided 28 Oct, so the pathway builds every
+   milestone like the single-year one does). new capacity can't go below
+   what earlier expansions built
+4. rank again. if every realisation's ENS share is under the tolerance, stop,
+   otherwise back to 3. tolerance 1 = expand once on the worst and stop
 
 expansions have to be optimal. a dispatch can also end at status 7 (feasible
 but not proven optimal), its ENS is then an upper bound on the minimum: under
@@ -224,6 +227,11 @@ def main():
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
 
+    # [cl] one forced expansion plus the rank after it
+    if args.max_iter < 2:
+        sys.exit("--max-iter has to be at least 2: the first expansion always "
+                 "happens, and the rank after it checks the result")
+
     say(f"milestone {args.model_dir}, {len(zones)} zones, tolerance {args.tolerance:.1%}")
     fleet_dd = start_fleet(args, settings, work)
     realisations = build_realisations(args.realisations_file, args.model_dir, work,
@@ -237,7 +245,8 @@ def main():
                  f"{MAX_PATH}, and GAMS then fails to load CPLEX. Use a shorter "
                  f"results path or shorter realisation names.")
 
-    # [cl] the loop: rank, stop if all clear, otherwise expand on the worst
+    # [cl] the loop: rank, expand on the worst. from the second rank on, stop
+    # when all clear
     log, previous_worst, final_dir = [], None, None
     for iteration in range(1, args.max_iter + 1):
         res = rank(realisations, fleet_dd, work, settings, args, iteration)
@@ -245,7 +254,7 @@ def main():
 
         say(f"iteration {iteration}: rank")
         for name, r in ranked:
-            flag = "FAIL" if r["share"] > args.tolerance else "ok"
+            flag = "over" if r["share"] > args.tolerance else "ok"
             if r["proof"] != "optimal":
                 flag += ", " + r["proof"]
             say(f"  {name:<10} share {r['share']:>9.4%}  ENS {r['ens']:>12,.1f} GWh"
@@ -256,11 +265,8 @@ def main():
                         "wall_s": round(r["wall"], 1)})
 
         worst_name, worst = ranked[0]
-        if worst["share"] <= args.tolerance:
+        if iteration > 1 and worst["share"] <= args.tolerance:
             say(f"\nall realisations within tolerance at iteration {iteration}")
-            # [cl] if nothing was expanded, any dispatch of this rank has the
-            # fleet we want, so use its results
-            final_dir = final_dir or worst["dir"]
             break
 
         # [cl] sanity check: more capacity can't make ENS go up

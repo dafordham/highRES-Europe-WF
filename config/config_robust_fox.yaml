@@ -59,9 +59,12 @@ robust:
   # [cl] Realisations per milestone. Mock ones, scaled from the weather year, until
   # C2E. A yaml list, see the file.
   realisations: config/realisations_zonal_test.yaml
-  # [cl] ENS share of each realisation's own demand. A placeholder, nowhere near a
-  # reliability standard.
-  tolerance: 0.05
+  # [cl] ENS share of each realisation's own demand. every value is its own
+  # pathway, in folder tol<value>. 1 = expand once on the worst and stop. not
+  # 0: the barrier always leaves a bit of ENS, so start at 0.001. two for now
+  # to test on the mock data, the full sweep (0.001 0.005 0.01 0.02 1) once
+  # the real data is in
+  tolerances: [0.01, 1]
   max_iter: 5
   # [cl] the milestone's one job. a rank runs the 3 dispatches at once with 6
   # CPLEX threads each, so 18 cores. measured at full year with the

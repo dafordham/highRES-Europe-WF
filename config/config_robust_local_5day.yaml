@@ -32,9 +32,9 @@ robust:
   # Realisations per milestone. Mock ones, scaled from the weather year, until
   # C2E. A yaml list, see the file.
   realisations: config/realisations_zonal_test.yaml
-  # ENS share of each realisation's own demand. A placeholder, nowhere near a
-  # reliability standard.
-  tolerance: 0.05
+  # [cl] ENS share of each realisation's own demand. every value is its own
+  # pathway, in folder tol<value>. 1 = expand once on the worst and stop
+  tolerances: [0.02, 1]
   max_iter: 5
   # Cores for the loop: realisations x CPLEX threads. Locally Snakemake caps it
   # at -c.

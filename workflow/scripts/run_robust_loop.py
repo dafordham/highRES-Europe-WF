@@ -31,7 +31,7 @@ cmd = [
     "--zones", ",".join(p.zones),
     "--realisations-file", str(snakemake.input.realisations),
     "--vre-parquet", str(snakemake.input.vre_parquet),
-    "--tolerance", str(r.get("tolerance", 0.05)),
+    "--tolerance", str(p.tolerance),
     "--max-iter", str(r.get("max_iter", 5)),
     "--gams", str(p.gamspath),
     "--code", str(p.sharedcodepath),

@@ -141,6 +141,16 @@ pathway_scenarios.loc[:, ["solar_scenario", "wind_scenario", "transmission_scena
 # sharedpath=resultspath / "{year}_{spatial}"
 pathwaypath = "{solar_scenario}_{wind_scenario}_{transmission_scenario}_{emission_scenario}_{growth_scenario}"
 modelpath=resultspath / "{psys_scenario}_{esys_scenario}_{spatial}" / pathwaypath
+
+# pathways
+# [cl] with the robust loop on, every value in robust.tolerances is its own
+# pathway, in its own folder tol<value> (28 Oct: swept, not one value)
+robust = config.get("robust", {})
+tolerances = []
+if robust.get("enabled", False):
+    tolerances = [str(t) for t in robust["tolerances"]]
+    modelpath = modelpath / "tol{tolerance}"
+
 sharedpath=resultspath / "{year}_{spatial}_{solar_scenario}_{wind_scenario}" # added solar and wind scenarios for wildcards
 horizonpath=modelpath / "{horizon}_{year}"
 wildcard_constraints:
@@ -149,6 +159,7 @@ wildcard_constraints:
     psys_scenario="[^/]+",
     esys_scenario="[^/]+",
     spatial="[^/]+",
+    tolerance="[0-9.]+",  # pathways
 
 localrules:
     all,
@@ -184,9 +195,15 @@ localrules:
     # futex_do_wait.
 
 
+# pathways
+# [cl] fill in the tolerance first, then the scenarios as usual
+all_targets = horizonpath / config["target"]
+if tolerances:
+    all_targets = expand(str(all_targets), tolerance=tolerances, allow_missing=True)
+
 rule all:
     input:
-        expand(horizonpath / config["target"], zip, psys_scenario=psys_scenarios, esys_scenario=esys_scenarios,
+        expand(all_targets, zip, psys_scenario=psys_scenarios, esys_scenario=esys_scenarios,
         year=years, spatial=spatials, horizon=pathway_horizons,
         solar_scenario=solar_scenarios, wind_scenario=wind_scenarios, transmission_scenario=transmission_scenarios,
         emission_scenario=emission_scenarios, growth_scenario=growth_scenarios)    
@@ -385,7 +402,9 @@ def resolve_prior_ledger(wildcards):
     prior_horizon = planning_horizons[idx - 1]
     prior_year = years[idx - 1]
     # scenario_path = resultspath / f"{wildcards.psys_scenario}_{wildcards.esys_scenario}_{wildcards.spatial}_{wildcards.solar_scenario}_{wildcards.wind_scenario}_{wildcards.transmission_scenario}_{wildcards.emission_scenario}_{wildcards.growth_scenario}"
-    scenario_path = resultspath / f"{wildcards.psys_scenario}_{wildcards.esys_scenario}_{wildcards.spatial}/{wildcards.solar_scenario}_{wildcards.wind_scenario}_{wildcards.transmission_scenario}_{wildcards.emission_scenario}_{wildcards.growth_scenario}"
+    # pathways
+    # [cl] from modelpath itself, so it also has the tol<value> level
+    scenario_path = pathlib.Path(str(modelpath).format(**dict(wildcards.items())))
     return scenario_path / f"{prior_horizon}_{prior_year}" / "capacity_ledger.csv"
     # return modelpath / f"{prior_horizon}_{prior_year}" / "capacity_ledger.csv" # Is it better in this way?
 
@@ -727,12 +746,11 @@ rule run_gams:
 # pathways
 # [cl] Climate-Robust Pathways. With robust.enabled in the config, a milestone is
 # solved by the robust loop instead of one expansion: dispatch the fleet
-# against every realisation, expand on the worst, repeat until all clear
-# (workflow/scripts/pathway_step.py). Both rules write the same results.gdx,
-# so the ruleorder picks one and every rule after it is unchanged. The other
-# settings are documented in config/config_robust_local_5day.yaml.
-robust = config.get("robust", {})
-
+# against every realisation, expand on the worst (always once), repeat until
+# all clear (workflow/scripts/pathway_step.py). Both rules write the same
+# results.gdx, so the ruleorder picks one and every rule after it is
+# unchanged. The other settings are documented in
+# config/config_robust_local_5day.yaml.
 if robust.get("enabled", False):
     ruleorder: run_robust_loop > run_gams
 else:
@@ -748,6 +766,7 @@ rule run_robust_loop:
         **gams_params,
         horizonpath=lambda wildcards, output: str(pathlib.Path(output.modelresults).parent),
         robust=robust,
+        tolerance=lambda wildcards: float(wildcards.tolerance),
         zones=aggregated_regions,
         scriptsdir=pathlib.Path(workflow.basedir) / "scripts",
     # [cl] One job for the whole milestone. A rank runs one dispatch per
