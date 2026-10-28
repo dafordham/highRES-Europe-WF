@@ -1,4 +1,4 @@
-"""[cl] GAMS settings for a highRES solve, from the rule's params
+"""GAMS settings for a highRES solve, from the rule's params
 
 used by both run_gams.py and run_robust_loop.py so they solve with the same
 scenario settings. ens_obj, fix_fleet and fleet_floor are added by each script

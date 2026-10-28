@@ -20,7 +20,7 @@ horizon = pathlib.Path(p.horizonpath)
 work = horizon / "robust"
 work.mkdir(parents=True, exist_ok=True)
 
-# [cl] pathway_step.py reads the GAMS settings from this file, one per line
+# pathway_step.py reads the GAMS settings from this file, one per line
 settings_file = work / "gams_settings.txt"
 settings_file.write_text("\n".join(gams_settings(p, w)))
 
@@ -39,7 +39,7 @@ cmd = [
     "--results-to", str(snakemake.output.modelresults),
 ]
 
-# [cl] print pathway_step's output and write it to the log as it comes
+# print pathway_step's output and write it to the log as it comes
 with open(snakemake.log[0], "a") as log:
     log.write("\n$ " + " ".join(cmd) + "\n")
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE,
